@@ -559,7 +559,7 @@ window.Pilot = {
     const lowPrint = !!(card.run && p.printNumber > 0 && p.printNumber <= Math.max(3, Math.ceil(card.run.size*.02)));
     event('scratch_reveal', {source:inst.source, node:inst.node, placeSrc:place ? place.src : '', placeKind:place ? place.kind : '', lowPrint, card:card.id, rank:card.rank, grade:p.grade, computedGrade:row.computedGrade,
       sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken, durationMs:row.durationMs,
-      strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:collection.filter(c => c.cardId === card.id).length === 1});
+      strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:inst.source !== 'debug' && realCards().filter(c => c.cardId === card.id).length === 1});
     updateChips();
   },
   onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; }
@@ -577,13 +577,15 @@ function updateChips(){
   const d = $('dailyBtn');
   if (dailyReady()){ d.textContent = 'Daily card ready'; d.classList.add('ready'); }
   else { d.textContent = `Next daily in ${fmtLeft(daily.last + DAY - Date.now())}`; d.classList.remove('ready'); }
-  const owned = new Set(collection.map(c => c.cardId)).size;
+  const owned = new Set(realCards().map(c => c.cardId)).size;
   $('setChip').textContent = `Harbor Lights ${owned}/${E.CARDS.length}`;
 }
 $('setChip').addEventListener('click', () => showView('vCollection'));
 
 /* ================= Static cards (collection and inspect) ================= */
 const GRADE_ORDER = {Pristine:0, Good:1, Fair:2, Poor:3};
+const isTest = c => c.source === 'debug';
+const realCards = () => collection.filter(c => !isTest(c));
 function cardMarkup(card, inst, idx){
   const esc = E.esc;
   const ed = card.run ? `Launch Ed. · Run ${card.run.label} of ${card.run.size}` : 'Launch Ed. · Evergreen';
@@ -601,7 +603,7 @@ function cardMarkup(card, inst, idx){
   const prov = inst ? esc(inst.provenance || 'Harbor Lights') : 'Harbor Lights';
   const date = inst ? new Date(inst.at).toLocaleDateString('en-US') : `No. ${card.no}`;
   const resid = inst && inst.mask ? `<canvas class="resid" data-i="${idx}"></canvas>` : '';
-  return `<div class="card${inst && inst.isHolo ? ' holo' : ''}">
+  return `<div class="card${inst && inst.isHolo ? ' holo' : ''}${inst && isTest(inst) ? ' test' : ''}">
     <div class="topline"><span class="sig"><b>${card.sig[0]}·${card.sig[1]}</b><b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
     <div class="banner"><span class="name">${esc(card.name)}</span><span class="ed">${ed}</span></div>
     <div class="art">${E.artSVG(card)}</div>
@@ -642,34 +644,47 @@ let colMode = 'cat', shown = [];
 function bestCopy(list){
   return list.slice().sort((a, b) => (GRADE_ORDER[a.grade] - GRADE_ORDER[b.grade]) || (b.isHolo - a.isHolo) || ((a.printNumber > 0 ? a.printNumber : 1e9) - (b.printNumber > 0 ? b.printNumber : 1e9)))[0];
 }
+function tileCap(card, inst, right){
+  return `<div class="tile-cap"><b>${E.esc(card.name)}</b><span class="tags">${right}</span></div>`;
+}
+const holoTag = inst => inst.isHolo ? '<span class="holo-tag">Holo</span>' : '';
 function renderCollection(){
   const grid = $('colGrid'), cards = E.CARDS.slice().sort((a, b) => a.no - b.no);
-  const owned = new Set(collection.map(c => c.cardId)).size;
-  $('setProgress').textContent = `${owned} of ${cards.length} collected`;
+  const real = realCards(), tests = collection.filter(isTest);
+  const owned = new Set(real.map(c => c.cardId)).size;
+  $('segCat').textContent = `Set ${owned}/${cards.length}`;
+  $('segAll').textContent = `My cards ${real.length}`;
   shown = [];
   let html = '';
+  const tile = (card, inst, right, label) => { const i = shown.push(inst) - 1;
+    return `<button class="tile" type="button" data-i="${i}" aria-label="${E.esc(label)}">${cardMarkup(card, inst, i)}${tileCap(card, inst, right)}</button>`; };
   if (colMode === 'cat'){
     for (const card of cards){
-      const mine = collection.filter(c => c.cardId === card.id);
+      const mine = real.filter(c => c.cardId === card.id);
       if (mine.length){
-        const inst = bestCopy(mine), i = shown.push(inst) - 1;
-        html += `<button class="tile" type="button" data-i="${i}" aria-label="${E.esc(card.name)}, ${mine.length} owned">${cardMarkup(card, inst, i)}<div class="tile-cap"><b>${E.esc(card.name)}</b><span>×${mine.length}</span></div></button>`;
+        const inst = bestCopy(mine);
+        html += tile(card, inst, holoTag(inst) + (mine.length > 1 ? `<span class="count">×${mine.length}</span>` : ''), `${card.name}, ${mine.length} owned`);
       } else {
-        html += `<div class="tile slot-empty" aria-label="Empty slot ${card.no}">${cardMarkup(card, null, -1)}<div class="tile-cap"><b>No. ${card.no}</b><span>${E.RANKS[card.rank - 1]}</span></div></div>`;
+        html += `<div class="tile slot-empty" aria-label="Empty slot ${card.no}">${cardMarkup(card, null, -1)}<div class="tile-cap"><b>No. ${card.no}</b><span class="tags">${E.RANKS[card.rank - 1]}</span></div></div>`;
       }
     }
   } else {
-    const list = collection.slice().reverse();
-    if (!list.length) html = '<p class="empty-note">No cards yet. Walk to a node on the map, or claim your daily card.</p>';
-    for (const inst of list){
+    if (!real.length) html += '<p class="empty-note">No cards yet. Walk to a node on the map, or claim your daily card.</p>';
+    for (const inst of real.slice().reverse()){
       const card = E.CARDS.find(c => c.id === inst.cardId); if (!card) continue;
-      const i = shown.push(inst) - 1;
-      html += `<button class="tile" type="button" data-i="${i}" aria-label="${E.esc(card.name)}, ${inst.grade}">${cardMarkup(card, inst, i)}<div class="tile-cap"><b>${E.esc(card.name)}</b><span class="g-${inst.grade}">${inst.grade}</span></div></button>`;
+      html += tile(card, inst, holoTag(inst) + `<span class="g-${inst.grade}">${inst.grade}</span>`, `${card.name}, ${inst.isHolo ? 'holo, ' : ''}${inst.grade}`);
+    }
+    if (tests.length){
+      html += `<h2 class="group-head">Test cards <span>${tests.length}</span></h2><p class="group-note">Pulled from the Debug tab. They don’t count toward your set or your card total.</p>`;
+      for (const inst of tests.slice().reverse()){
+        const card = E.CARDS.find(c => c.id === inst.cardId); if (!card) continue;
+        html += tile(card, inst, '<span class="test-tag">Test</span>' + holoTag(inst) + `<span class="g-${inst.grade}">${inst.grade}</span>`, `Test card, ${card.name}, ${inst.grade}`);
+      }
     }
   }
   grid.innerHTML = html;
   grid.querySelectorAll('canvas.resid').forEach(cv => { const inst = shown[+cv.dataset.i]; if (inst && inst.mask) paintResidue(cv, inst.mask); });
-  event('view', {view:colMode === 'cat' ? 'catalogue' : 'all_cards', owned});
+  event('view', {view:colMode === 'cat' ? 'set' : 'my_cards', owned, cards:real.length, testCards:tests.length});
   $('testerCode').textContent = P.tester || testerId;
 }
 $('colGrid').addEventListener('click', e => { const t = e.target.closest('button.tile'); if (t) openInspect(shown[+t.dataset.i]); });
@@ -686,13 +701,13 @@ function openInspect(inst){
   $('inspCard').innerHTML = cardMarkup(card, inst, 0);
   const cv = $('inspCard').querySelector('canvas.resid');
   if (cv) paintResidue(cv, inst.mask);
-  $('inspHint').textContent = inst.mask ? 'Hold the panel to read through the residue.' : inst.grade === 'Pristine' ? 'A Pristine copy. The panel came off clean.' : '';
+  $('inspHint').textContent = isTest(inst) ? 'A test card from the Debug tab. It doesn’t count toward your set.' : inst.mask ? 'Hold the panel to read through the residue.' : inst.grade === 'Pristine' ? 'A Pristine copy. The panel came off clean.' : '';
   const cfRows = E.STATS.map(k => { const [lo, hi] = card.cf[k]; const b = inst.broke && inst.broke[k];
     return `<dt>${k[0].toUpperCase() + k.slice(1)}</dt><dd>${inst.cf[k].toFixed(1)} <span style="color:var(--muted)">(${lo}–${hi})</span>${b ? ' <span class="flag">broke the ceiling</span>' : ''}</dd>`; }).join('');
   $('inspSlab').innerHTML = `<div class="slab"><div class="slab-head"><div><div class="t">${E.esc(card.name)}</div><div class="s">Harbor Lights · Launch · ${E.RANKS[card.rank - 1]}</div></div>
     <div class="slab-grade"><div class="g g-${inst.grade}">${inst.grade}</div></div></div>
     <dl class="kv"><dt>Finish</dt><dd>${inst.isHolo ? 'Holo' : 'Normal'}</dd><dt>Print</dt><dd>${inst.printNumber > 0 ? inst.printNumber + ' / ' + card.run.size : 'Evergreen'}</dd>
-    <dt>Token</dt><dd>${inst.token}</dd>${cfRows}<dt>Pulled</dt><dd>${E.esc(inst.provenance || '')}, ${new Date(inst.at).toLocaleDateString('en-US')}</dd></dl></div>`;
+    <dt>Token</dt><dd>${inst.token}</dd>${cfRows}<dt>Pulled</dt><dd>${E.esc(inst.provenance || '')}, ${new Date(inst.at).toLocaleDateString('en-US')}</dd>${isTest(inst) ? '<dt>Status</dt><dd>Test card, not in your set</dd>' : ''}</dl></div>`;
   const desc = $('inspCard').querySelector('.desc.has-resid');
   if (desc){
     let t = null;

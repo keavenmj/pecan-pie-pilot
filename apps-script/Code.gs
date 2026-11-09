@@ -187,7 +187,7 @@ function refreshSummary() {
     ['Holo', sc.filter(function (r) { return r.holo === true; }).length],
     ['Low print numbers', sc.filter(function (r) { return r.low_print === true; }).length],
     ['Ceiling breaks', sc.filter(function (r) { return String(r.broke || '') !== ''; }).length],
-    ['New Catalogue slots filled', sc.filter(function (r) { return r.new_slot === true; }).length]
+    ['New set slots filled', sc.filter(function (r) { return r.new_slot === true; }).length]
   ]]);
 
   // Write the blocks down the sheet
