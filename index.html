@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17202A">
+<title>Pecan Pie</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Alegreya+SC:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/engine.css">
+<link rel="stylesheet" href="css/pilot.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ===== Map ===== -->
+  <section class="view view-map" id="vMap">
+    <div id="map" aria-label="Map of nearby nodes"></div>
+    <div class="maptop">
+      <div class="brand">Pecan Pie</div>
+      <button class="chip" id="setChip" type="button">Harbor Lights 0/12</button>
+      <button class="chip daily" id="dailyBtn" type="button">Daily card</button>
+    </div>
+    <div class="mapnote" id="mapNote" role="status" hidden></div>
+    <div class="gps" id="gpsChip" role="status">Finding you…</div>
+    <button class="fab" id="recenter" type="button" aria-label="Center on me">◎</button>
+
+    <div class="sheet" id="nodeSheet" hidden>
+      <div class="sheet-row">
+        <div>
+          <div class="sheet-title" id="nsName">Node</div>
+          <div class="sheet-sub" id="nsDist"></div>
+        </div>
+        <button class="btn" id="nsClose" type="button" aria-label="Close">✕</button>
+      </div>
+      <button class="btn primary wide" id="nsScratch" type="button">Scratch</button>
+    </div>
+
+    <div class="perm" id="permScreen" hidden>
+      <div class="perm-card">
+        <h2 id="permTitle">Turn on location</h2>
+        <p id="permBody">Pecan Pie shows nodes near you and checks when you reach one. Your location stays on this phone.</p>
+        <button class="btn primary wide" id="permGo" type="button">Turn on location</button>
+        <p class="note" id="permNote"></p>
+        <button class="btn wide" id="permSkip" type="button">See my collection instead</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Scratch ===== -->
+  <section class="view view-scratch" id="vScratch" hidden>
+    <div class="scratch-top">
+      <button class="btn" id="scratchBack" type="button">Back</button>
+      <div class="scratch-where" id="scratchWhere"></div>
+    </div>
+    <div class="bench">
+      <div class="specimen">
+        <div class="card-stage" id="stage"></div>
+        <p class="hint" id="hint">Scratch the lower panel.</p>
+        <button class="btn primary wide" id="scratchDone" type="button" hidden>Back to the map</button>
+      </div>
+      <div class="side">
+      <section class="panel labonly" aria-label="Live meters">
+        <h2>Live</h2>
+        <div class="meters">
+          <div class="meter"><div class="k">Coverage</div><div class="v" id="mCov">0%</div></div>
+          <div class="meter"><div class="k"><span class="sym">σ</span> weighted</div><div class="v" id="mSigW">0.000</div></div>
+          <div class="meter"><div class="k"><span class="sym">σ</span> raw</div><div class="v" id="mSigU">0.000</div></div>
+          <div class="meter"><div class="k">Would grade</div><div class="v" id="mGrade">–</div></div>
+        </div>
+        <div class="covbar" aria-hidden="true"><div class="covfill" id="covFill"></div><div class="covtick" id="covTick"></div></div>
+
+        <section aria-label="Grading result" id="slabWrap"></section>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Collection ===== -->
+  <section class="view view-collection" id="vCollection" hidden>
+    <div class="pane">
+      <div class="pane-head">
+        <h1>Collection</h1>
+        <div class="seg" role="tablist">
+          <button type="button" role="tab" id="segCat" aria-selected="true">Catalogue</button>
+          <button type="button" role="tab" id="segAll" aria-selected="false">All cards</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <label for="setFilter">Set</label>
+        <select id="setFilter"><option value="harbor">Harbor Lights</option></select>
+        <span class="progress" id="setProgress"></span>
+      </div>
+      <div class="grid" id="colGrid"></div>
+    </div>
+  </section>
+
+  <!-- ===== Debug ===== -->
+  <section class="view view-debug" id="vDebug" hidden>
+    <div class="pane">
+      <div class="pane-head"><h1>Debug</h1></div>
+      <section class="panel">
+        <h2>Pilot</h2>
+        <div class="ctl" style="padding:0">
+          <div class="row"><label for="cardPick">Next card</label><select class="btn" id="cardPick" aria-label="Next card"></select></div>
+          <div class="btnrow">
+            <button class="btn primary" id="newCard" type="button">Scratch a test card</button>
+            <button class="btn" id="soundBtn" aria-pressed="true" type="button">Sound on</button>
+            <button class="btn" id="testerBtn" aria-pressed="false" type="button">Tester mode</button>
+          </div>
+          <div class="row"><label for="dMock">Mock location</label><select id="dMock"><option value="off">Off (real GPS)</option><option value="on">On: tap the map to walk</option></select></div>
+          <div class="row"><label for="dWalk">Mock walk speed</label><select id="dWalk"><option value="1.4">1.4 m/s (walking)</option><option value="6">6 m/s</option><option value="40">40 m/s</option><option value="0">Teleport</option></select></div>
+          <div class="row"><label for="dSource">Node placement</label><select id="dSource"><option value="osm">Public places (OpenStreetMap)</option><option value="random">Random spots</option></select></div>
+          <div class="row"><label for="dVis">Visibility radius</label><input type="range" id="dVis" min="200" max="800" step="50"><output id="oVis"></output></div>
+          <div class="row"><label for="dReach">Interaction radius</label><input type="range" id="dReach" min="30" max="150" step="5"><output id="oReach"></output></div>
+          <div class="row"><label for="dAcc">Max GPS error</label><input type="range" id="dAcc" min="20" max="200" step="10"><output id="oAcc"></output></div>
+          <div class="row"><label for="dCool">Node cooldown</label><input type="range" id="dCool" min="0" max="24" step="1"><output id="oCool"></output></div>
+          <div class="btnrow">
+            <button class="btn" id="dReseed" type="button">Reseed nodes around me</button>
+            <button class="btn" id="dReady" type="button">Make all nodes ready</button>
+            <button class="btn" id="dDaily" type="button">Reset daily card</button>
+          </div>
+          <div class="row"><label for="dTester">Tester name</label><input type="text" id="dTester" autocomplete="off"></div>
+          <div class="row"><label for="dHook">Log endpoint</label><input type="url" id="dHook" placeholder="https://script.google.com/…" autocomplete="off"></div>
+          <div class="btnrow">
+            <button class="btn" id="dCopyEvents" type="button">Copy event log</button>
+            <button class="btn" id="dWipe" type="button">Erase collection</button>
+            <span class="note" id="dNote"></span>
+          </div>
+          <textarea id="dOut" hidden readonly aria-label="Event log export"></textarea>
+          <p class="note">Mock location ignores real GPS and treats every fix as accurate to 5 m. Every scratch is logged on this phone; with a log endpoint set, events are also sent there.</p>
+        </div>
+      </section>
+      <details class="panel labonly" id="dGrading" open>
+        <summary>Scratch and grading</summary>
+        <div class="ctl">
+          <div class="row"><label for="sThreshold">Reveal line</label><input type="range" id="sThreshold" min="60" max="70" step="1"><output id="oThreshold"></output></div>
+          <div class="row"><label for="sBrush">Brush radius</label><input type="range" id="sBrush" min="6" max="18" step="1"><output id="oBrush"></output></div>
+          <div class="row"><label for="sHaze">Residue opacity</label><input type="range" id="sHaze" min="20" max="100" step="5"><output id="oHaze"></output></div>
+          <div class="row"><label for="sStrength">Erase per pass</label><input type="range" id="sStrength" min="20" max="100" step="5"><output id="oStrength"></output></div>
+          <div class="row"><label for="sWeight">Cell weighting</label><select id="sWeight"><option value="uniform">Uniform (all 64 equal)</option><option value="border">Clean border (inner 36)</option><option value="gaussian">Center-weighted (Gaussian)</option></select></div>
+          <div class="row" id="rowSpread"><label for="sSpread">Gaussian spread</label><input type="range" id="sSpread" min="30" max="150" step="5"><output id="oSpread"></output></div>
+          <div class="row"><label for="sPristine">Pristine below σ</label><input type="range" id="sPristine" min="2" max="30" step="1"><output id="oPristine"></output></div>
+          <div class="row"><label for="sGood">Good below σ</label><input type="range" id="sGood" min="5" max="40" step="1"><output id="oGood"></output></div>
+          <div class="row"><label for="sFair">Fair below σ</label><input type="range" id="sFair" min="10" max="48" step="1"><output id="oFair"></output></div>
+          <div class="row"><label for="sHeat">Grid heatmap</label><select id="sHeat"><option value="off">Off</option><option value="on">On while scratching</option><option value="always">Always, with values</option></select></div>
+          <p class="note">σ is the population standard deviation of the 64 cell erase values. The most uneven scratch possible at a 65% line is about 0.477, so cutoffs live between 0 and 0.48. Grading uses the weighted σ; the reveal line uses the plain mean of all 64 cells.</p>
+        </div>
+      </details>
+
+      <details class="panel labonly" id="dFeel" open>
+        <summary>Feel</summary>
+        <div class="ctl"><div class="toggles">
+          <div class="row"><label for="sCoat">Coating</label><select id="sCoat"><option value="peel">Peel (coin)</option><option value="flaky">Flaky chips</option><option value="smooth">Smooth fade</option></select></div>
+          <p class="note">Peel: each pass clears a clean track but leaves fine streaks along the stroke, the way a coin edge skips. Erase per pass sets how many streaks a pass clears, and passes from other angles fill in the rest.</p>
+          <label class="tog"><input type="checkbox" id="fxShavings"><span>Debris<small>Peel: the coating rolls into a curl ahead of the coin and drops off when you change direction or it gets too big. Flaky: metal flakes spray off.</small></span></label>
+          <label class="tog"><input type="checkbox" id="fxAudio"><span>Rich sound and haptics<small>A grainy scratch sound that follows your speed, plus vibration ticks on Android. Off uses the plain hiss.</small></span></label>
+          <label class="tog"><input type="checkbox" id="fxTension"><span>Tension<small>From about three quarters of the way to the reveal line: rising pitch, light through the thin spots, and a slight tremble. Driven by coverage only.</small></span></label>
+          <label class="tog"><input type="checkbox" id="fxStaged"><span>Staged reveal<small>A short beat, then values land in sequence. Everything is still rolled at the same instant. Tap the card to skip.</small></span></label>
+        </div></div>
+      </details>
+
+      <details class="panel labonly" id="dForce">
+        <summary>Force menu</summary>
+        <div class="ctl">
+          <div class="row"><label for="fHolo">Finish</label><select id="fHolo"><option value="auto">Roll</option><option value="holo">Force holo</option><option value="normal">Force normal</option></select></div>
+          <div class="row"><label for="sHoloRate">Holo rate</label><input type="range" id="sHoloRate" min="2" max="50" step="1"><output id="oHoloRate"></output></div>
+          <div class="row"><label for="fPrint">Print number</label><select id="fPrint"><option value="auto">Roll</option><option value="low">Force #1 to #3</option><option value="high">Force last three</option></select></div>
+          <div class="row"><label for="fGrade">Condition</label><select id="fGrade"><option value="auto">From scratch</option><option>Pristine</option><option>Good</option><option>Fair</option><option>Poor</option></select></div>
+          <div class="row"><label for="fCF">Chance Factors</label><select id="fCF"><option value="auto">Roll</option><option value="ceiling">One breaks the ceiling</option><option value="flat">All dead center</option></select></div>
+          <div class="row"><label for="fToken">Token</label><select id="fToken"><option value="auto">Roll</option><option>Rock</option><option>Paper</option><option>Scissors</option></select></div>
+          <p class="note">Forcing a condition replaces the computed grade but keeps your real residue, so you can see how a Pristine finish looks on any scratch.</p>
+        </div>
+      </details>
+
+      <details class="panel labonly" id="dLog">
+        <summary>Session log</summary>
+        <div class="ctl">
+          <div class="logwrap"><table><thead><tr><th>#</th><th>Card</th><th>Grade</th><th><span class="sym">σ</span> w</th><th>Finish</th><th>Print</th><th>Time</th><th>Speed</th></tr></thead><tbody id="logBody"></tbody></table></div>
+          <div class="btnrow">
+            <button class="btn" id="copyCsv">Copy CSV</button>
+            <button class="btn" id="clearLog">Clear log</button>
+            <span class="note" id="logNote"></span>
+          </div>
+          <textarea id="csvOut" hidden readonly aria-label="CSV export"></textarea>
+          <p class="note">Each row includes all 64 raw cell values at the moment of reveal, plus scratch time and average stroke speed, so you can compare how carefully people scratch high-rank cards against commons. The log is kept in this browser only.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ===== Inspect ===== -->
+  <div class="inspect" id="inspect" hidden role="dialog" aria-modal="true" aria-label="Card details">
+    <div class="inspect-body">
+      <div class="inspect-card" id="inspCard"></div>
+      <p class="hint" id="inspHint"></p>
+      <div id="inspSlab"></div>
+      <button class="btn wide" id="inspClose" type="button">Close</button>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Sections">
+    <button type="button" data-view="vMap" aria-current="page">Map</button>
+    <button type="button" data-view="vCollection">Collection</button>
+    <button type="button" data-view="vDebug" id="tabDebug" hidden>Debug</button>
+  </nav>
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/pilot.js"></script>
+</body>
+</html>
