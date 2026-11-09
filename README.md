@@ -9,6 +9,8 @@ It's a static web app with no build step and no backend. Host the folder anywher
 - `index.html`: app shell with Map, Scratch, Collection, and Debug views.
 - `js/engine.js`: the scratch, grading, and reveal engine from the Scratch Lab.
 - `js/pilot.js`: map, nodes, proximity, daily card, collection, inspect, and event logging.
+- `js/config.js`: the log endpoint.
+- `apps-script/`: the Google Sheets log receiver and summary.
 - `css/engine.css`, `css/pilot.css`: styles.
 - `vendor/leaflet/`: Leaflet 1.9.4 (BSD-2-Clause, license included).
 
@@ -38,7 +40,12 @@ Tap the title five times again to hide it.
 
 ## Logging
 
-Every event is stored on the phone (Debug, then Copy event log). Set a log endpoint in Debug to also send each event as a JSON POST, for example to a Google Apps Script web app that appends rows to a Sheet. Events carry a tester ID, not location coordinates.
+- **On the phone:** every event is stored locally (Debug, then Copy event log).
+- **To a Google Sheet:** with an endpoint set, events also go to a Google Sheet. Set it in `js/config.js` for every tester, or in Debug for one phone.
+  - Events queue on the phone and send in batches. They wait out offline stretches, and a final send runs when the app is closed.
+  - Each event has an ID so repeats are dropped.
+  - `apps-script/` holds the receiver script and its setup steps.
+- **What's sent:** a random tester code (shown in Collection), the local date, and gameplay details. Never coordinates.
 
 ## Tile usage
 

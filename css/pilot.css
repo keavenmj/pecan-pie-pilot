@@ -108,3 +108,6 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .inspect-body { max-width: 380px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 .inspect-body .hint { color: #E4E9EE; margin: 0 auto; }
 .inspect-card { width: min(360px, 100%); margin: 0 auto; }
+
+.tester-code { margin-top: 8px; }
+.tester-code b { font-family: var(--font-data); }

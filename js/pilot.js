@@ -31,13 +31,63 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
+const APP_V = '0.4';
+const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
+  : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
+const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const localDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const endpoint = () => P.hook || (window.PECAN_CONFIG && window.PECAN_CONFIG.logEndpoint) || '';
+let outbox = store.get('outbox', []);
+
 function event(type, data){
-  const e = Object.assign({at:new Date().toISOString(), type, session, tester:P.tester || testerId}, data || {});
+  const now = new Date();
+  const e = Object.assign({at:now.toISOString(), day:localDay(now), type, session, tester:P.tester || testerId,
+    id:now.getTime().toString(36) + Math.floor(E.rng()*1e8).toString(36), app:APP_V, platform:PLATFORM, standalone:standalone()}, data || {});
   events.push(e); if (events.length > 3000) events = events.slice(-3000);
   store.set('events', events);
-  if (P.hook){
-    try{ fetch(P.hook, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(e), keepalive:true}).catch(() => {}); }catch{}
+  if (endpoint()){
+    outbox.push(e); if (outbox.length > 5000) outbox = outbox.slice(-5000);
+    store.set('outbox', outbox); scheduleFlush();
   }
+}
+
+/* Delivery: batch the outbox, keep anything that fails, retry later. Each event carries an id so the receiver drops repeats. */
+let flushing = false, flushTimer = null, flushAt = 0;
+function scheduleFlush(ms){
+  const at = Date.now() + (ms == null ? 4000 : ms);
+  if (flushTimer && flushAt <= at) return;                   // an earlier send is already scheduled
+  clearTimeout(flushTimer); flushAt = at; flushTimer = setTimeout(flush, at - Date.now());
+}
+async function flush(){
+  clearTimeout(flushTimer); flushTimer = null;
+  const url = endpoint();
+  if (flushing || !outbox.length || !url || !navigator.onLine) return updateOutboxNote();
+  flushing = true;
+  const batch = outbox.slice(0, 100), body = JSON.stringify({v:1, events:batch});
+  try{
+    await fetch(url, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain;charset=utf-8'}, body, keepalive:body.length < 60000});
+    const sent = new Set(batch.map(e => e.id));
+    outbox = outbox.filter(e => !sent.has(e.id)); store.set('outbox', outbox);
+  }catch{}                                                   // offline or blocked: keep the batch for next time
+  flushing = false;
+  if (outbox.length) scheduleFlush(15000);
+  updateOutboxNote();
+}
+function beaconFlush(){
+  const url = endpoint();
+  if (!url || !outbox.length || !navigator.sendBeacon) return;
+  const batch = outbox.slice(0, 50), blob = new Blob([JSON.stringify({v:1, events:batch})], {type:'text/plain;charset=utf-8'});
+  try{ if (navigator.sendBeacon(url, blob)){ const sent = new Set(batch.map(e => e.id)); outbox = outbox.filter(e => !sent.has(e.id)); store.set('outbox', outbox); } }catch{}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') beaconFlush(); else scheduleFlush(500); });
+window.addEventListener('pagehide', beaconFlush);
+window.addEventListener('online', () => scheduleFlush(500));
+setInterval(() => { if (outbox.length) flush(); }, 30000);
+function updateOutboxNote(){
+  const el = document.getElementById('dOutbox'); if (!el) return;
+  const url = endpoint();
+  el.textContent = !url ? 'No log endpoint: events stay on this phone.'
+    : `${P.hook ? 'Custom endpoint' : 'Built-in endpoint'}. ${outbox.length ? outbox.length + ' event' + (outbox.length === 1 ? '' : 's') + ' waiting to send.' : 'Everything sent.'}`;
 }
 
 /* ================= Geometry ================= */
@@ -505,7 +555,9 @@ window.Pilot = {
     if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
     if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; store.set('nodes', nodes); } }
     if (ctx.source === 'daily'){ daily.last = Date.now(); store.set('daily', daily); }
-    event('scratch_reveal', {source:inst.source, node:inst.node, card:card.id, rank:card.rank, grade:p.grade, computedGrade:row.computedGrade,
+    const place = ctx.source === 'node' && nodes ? nodes.find(n => n.id === ctx.node) : null;
+    const lowPrint = !!(card.run && p.printNumber > 0 && p.printNumber <= Math.max(3, Math.ceil(card.run.size*.02)));
+    event('scratch_reveal', {source:inst.source, node:inst.node, placeSrc:place ? place.src : '', placeKind:place ? place.kind : '', lowPrint, card:card.id, rank:card.rank, grade:p.grade, computedGrade:row.computedGrade,
       sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken, durationMs:row.durationMs,
       strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:collection.filter(c => c.cardId === card.id).length === 1});
     updateChips();
@@ -618,6 +670,7 @@ function renderCollection(){
   grid.innerHTML = html;
   grid.querySelectorAll('canvas.resid').forEach(cv => { const inst = shown[+cv.dataset.i]; if (inst && inst.mask) paintResidue(cv, inst.mask); });
   event('view', {view:colMode === 'cat' ? 'catalogue' : 'all_cards', owned});
+  $('testerCode').textContent = P.tester || testerId;
 }
 $('colGrid').addEventListener('click', e => { const t = e.target.closest('button.tile'); if (t) openInspect(shown[+t.dataset.i]); });
 function setSeg(mode){ colMode = mode; $('segCat').setAttribute('aria-selected', mode === 'cat'); $('segAll').setAttribute('aria-selected', mode === 'all'); renderCollection(); }
@@ -703,7 +756,9 @@ $('dTester').value = P.tester;
 $('dTester').placeholder = testerId;
 $('dTester').addEventListener('change', () => { P.tester = $('dTester').value.trim(); saveP(); });
 $('dHook').value = P.hook;
-$('dHook').addEventListener('change', () => { P.hook = $('dHook').value.trim(); saveP(); if (P.hook) event('endpoint_set'); });
+$('dHook').placeholder = (window.PECAN_CONFIG && window.PECAN_CONFIG.logEndpoint) ? 'Using the built-in endpoint' : 'https://script.google.com/macros/s/…/exec';
+$('dHook').addEventListener('change', () => { P.hook = $('dHook').value.trim(); saveP(); if (P.hook) event('endpoint_set'); updateOutboxNote(); });
+$('dSend').addEventListener('click', () => flush());
 $('dCopyEvents').addEventListener('click', () => {
   const txt = JSON.stringify(events, null, 1), ta = $('dOut');
   const fallback = () => { ta.hidden = false; ta.value = txt; ta.focus(); ta.select(); $('dNote').textContent = 'Copy the selected text below.'; };
@@ -721,7 +776,8 @@ $('newCard').addEventListener('click', () => openScratch(drawCard(), {source:'de
 applyDebug();
 updateChips(); updateGps();
 event('app_open', {cards:collection.length});
+updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
-window.__pilot = {get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView};
+window.__pilot = {get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView};
 })();

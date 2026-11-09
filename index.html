@@ -93,6 +93,7 @@
         <span class="progress" id="setProgress"></span>
       </div>
       <div class="grid" id="colGrid"></div>
+      <p class="note tester-code">Your tester code: <b id="testerCode"></b>. Include it in your feedback so we can match it to your play.</p>
     </div>
   </section>
 
@@ -124,10 +125,12 @@
           <div class="row"><label for="dTester">Tester name</label><input type="text" id="dTester" autocomplete="off"></div>
           <div class="row"><label for="dHook">Log endpoint</label><input type="url" id="dHook" placeholder="https://script.google.com/…" autocomplete="off"></div>
           <div class="btnrow">
+            <button class="btn" id="dSend" type="button">Send events now</button>
             <button class="btn" id="dCopyEvents" type="button">Copy event log</button>
             <button class="btn" id="dWipe" type="button">Erase collection</button>
             <span class="note" id="dNote"></span>
           </div>
+          <p class="note" id="dOutbox"></p>
           <textarea id="dOut" hidden readonly aria-label="Event log export"></textarea>
           <p class="note">Mock location ignores real GPS and treats every fix as accurate to 5 m. Every scratch is logged on this phone; with a log endpoint set, events are also sent there.</p>
         </div>
@@ -209,6 +212,7 @@
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/config.js"></script>
 <script src="js/pilot.js"></script>
 </body>
 </html>
