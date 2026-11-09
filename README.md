@@ -14,7 +14,11 @@ It's a static web app with no build step and no backend. Host the folder anywher
 
 ## How it works
 
-- **Map:** OpenStreetMap tiles. The first good GPS fix seeds 15 nodes around the player: three within about 140 m, the rest out to about 600 m.
+- **Map:** OpenStreetMap tiles. The first good GPS fix places 15 nodes within about 650 m of the player, at least three within 200 m when the area allows. Walking 500 m from where nodes were last placed loads a new batch.
+- **Node placement:** one OpenStreetMap (Overpass) request per area. Nodes are kept at least 45 m apart.
+  - **Public places come first:** public art, viewpoints, landmarks, historic sites, parks, gardens, fountains, libraries, museums, cafes, piers, lighthouses and similar. Anything private, plus memorials, graves, shrines, playgrounds, schools and places of worship, is skipped. Places within 6 m of a road centerline, such as art in a median, are skipped too.
+  - **Walkable spots fill the gaps:** points along footpaths, trails, plazas and bike paths, never sidewalks, crosswalks, tunnels, or indoor or private paths. Each must be at least 15 m from roads and rail lines, at least 8 m from rivers and canals, and outside mapped lakes and ponds, with at most three per path.
+  - **Random spots** are used only if OpenStreetMap can't be reached or nothing walkable is mapped nearby, and the map says so.
 - **Proximity:** a node shows on the map within 400 m. It can be scratched within 75 m, and only when the phone's reported GPS error is ±100 m or better.
 - **Nodes:** each node gives one card, then recharges for 4 hours.
 - **Daily card:** one every 24 hours, no location needed.

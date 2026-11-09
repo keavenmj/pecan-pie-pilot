@@ -20,7 +20,7 @@ const NODE_NAMES = ['Tidewater Post', 'Gull Rock', 'Lantern Steps', 'Rope Yard',
 const P = Object.assign({vis:400, reach:75, acc:100, cool:4, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm'}, store.get('pilot', {}));
 const saveP = () => store.set('pilot', P);
 
-const NODES_V = 2;                                              // bump to reseed everyone after a node-format change
+const NODES_V = 3;                                              // bump to reseed everyone after a node-format change
 let nodes = store.get('nodesV', 0) === NODES_V ? store.get('nodes', null) : null;
 let seedCenters = store.get('seedCenters', []);
 let collection = store.get('collection', []);
@@ -187,42 +187,150 @@ function kindOf(t){
   if (t.amenity && AMENITY_KIND[t.amenity]) return AMENITY_KIND[t.amenity];
   return null;
 }
+/* One request per area: public places (centers) plus walkways and hazards (geometry). */
+const WALK_RE = '^(footway|path|pedestrian|cycleway|bridleway|track)$';
+const ROAD_RE = '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road|busway)$';
 function overpassQuery(c, r){
-  const a = `(around:${r},${c.lat.toFixed(6)},${c.lng.toFixed(6)})`;
-  return `[out:json][timeout:20];(nwr${a}["tourism"~"^(artwork|viewpoint|museum|attraction)$"];nwr${a}["historic"];` +
+  const a = `(around:${r},${c.lat.toFixed(6)},${c.lng.toFixed(6)})`, h = `(around:${r + 60},${c.lat.toFixed(6)},${c.lng.toFixed(6)})`;
+  return `[out:json][timeout:25];` +
+    `(nwr${a}["tourism"~"^(artwork|viewpoint|museum|attraction)$"];nwr${a}["historic"];` +
     `nwr${a}["leisure"~"^(park|garden)$"];nwr${a}["man_made"~"^(lighthouse|pier)$"];` +
-    `nwr${a}["amenity"~"^(library|fountain|clock|arts_centre|theatre|cinema|community_centre|townhall|marketplace|cafe|ice_cream|post_office)$"];);out center tags 400;`;
+    `nwr${a}["amenity"~"^(library|fountain|clock|arts_centre|theatre|cinema|community_centre|townhall|marketplace|cafe|ice_cream|post_office)$"];);out center tags 400;` +
+    `way${a}["highway"~"${WALK_RE}"]["footway"!~"^(sidewalk|crossing)$"]["access"!~"^(private|no|customers)$"]["tunnel"!="yes"]["indoor"!="yes"];out tags geom 1500;` +
+    `(way${h}["highway"~"${ROAD_RE}"];way${h}["railway"~"^(rail|light_rail|tram|subway|narrow_gauge|monorail)$"]["tunnel"!="yes"];` +
+    `way${h}["waterway"~"^(river|canal|stream|drain)$"]["tunnel"!~"^(yes|culvert)$"];way${h}["natural"="water"];);out tags geom;`;
 }
-async function fetchPlaces(c, r){
+async function fetchArea(c, r){
   const body = 'data=' + encodeURIComponent(overpassQuery(c, r));
   for (const url of OVERPASS){
     try{
-      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 25000);
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 30000);
       const res = await fetch(url, {method:'POST', body, headers:{'Content-Type':'application/x-www-form-urlencoded'}, signal:ctl.signal});
       clearTimeout(to);
       if (!res.ok) continue;
       const j = await res.json();
-      if (Array.isArray(j.elements)) return j.elements;
+      if (Array.isArray(j.elements)) return parseArea(j.elements, c);
     }catch{}
   }
   return null;
 }
-const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
-function pickPlaces(elements, c, want, taken){
-  const cands = [];
+
+/* Local flat projection in meters around the seed center: plenty accurate within a kilometer. */
+function projector(c){
+  const kx = 111320*Math.cos(rad(c.lat)), ky = 110540;
+  return {fwd:(lat, lng) => ({x:(lng - c.lng)*kx, y:(lat - c.lat)*ky}), back:(x, y) => ({lat:c.lat + y/ky, lng:c.lng + x/kx})};
+}
+const CELL = 50;
+function parseArea(elements, c){
+  const pr = projector(c), pois = [], walks = [], segs = new Map(), polys = [];
+  const addSeg = (a, b, t) => {
+    const x0 = Math.floor(Math.min(a.x, b.x)/CELL) - 1, x1 = Math.floor(Math.max(a.x, b.x)/CELL) + 1;
+    const y0 = Math.floor(Math.min(a.y, b.y)/CELL) - 1, y1 = Math.floor(Math.max(a.y, b.y)/CELL) + 1;
+    const sg = {a, b, t};
+    for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++){ const k = gx + ',' + gy; let l = segs.get(k); if (!l) segs.set(k, l = []); l.push(sg); }
+  };
   for (const el of elements){
+    const t = el.tags || {};
+    if (!el.geometry){ pois.push(el); continue; }
+    const pts = el.geometry.filter(g => g && g.lat != null).map(g => pr.fwd(g.lat, g.lon));
+    if (pts.length < 2) continue;
+    let kind = null;
+    if (t.highway && new RegExp(WALK_RE).test(t.highway) && t.footway !== 'sidewalk' && t.footway !== 'crossing') { walks.push({pts, t}); continue; }
+    if (t.highway && new RegExp(ROAD_RE).test(t.highway)) kind = 'road';
+    else if (t.railway) kind = 'rail';
+    else if (t.waterway) kind = 'waterway';
+    else if (t.natural === 'water'){ kind = 'water'; const first = pts[0], last = pts[pts.length - 1]; if (Math.hypot(first.x - last.x, first.y - last.y) < 1) polys.push(pts); }
+    if (!kind) continue;
+    for (let i = 1; i < pts.length; i++) addSeg(pts[i - 1], pts[i], kind);
+  }
+  return {pr, pois, walks, segs, polys};
+}
+function segDist(p, a, b){
+  const dx = b.x - a.x, dy = b.y - a.y, L = dx*dx + dy*dy;
+  let k = L ? ((p.x - a.x)*dx + (p.y - a.y)*dy)/L : 0; k = k < 0 ? 0 : k > 1 ? 1 : k;
+  return Math.hypot(p.x - a.x - k*dx, p.y - a.y - k*dy);
+}
+function inPoly(p, poly){
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++){
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x)*(p.y - a.y)/(b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+// Distance limits in meters from each hazard; a point must clear all of them.
+const WALK_CLEAR = {road:15, rail:15, waterway:8, water:5, inWater:true};
+const POI_CLEAR = {road:6, rail:10, waterway:0, water:0, inWater:true};
+function clearOf(area, p, lim){
+  const gx = Math.floor(p.x/CELL), gy = Math.floor(p.y/CELL);
+  for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++){
+    const l = area.segs.get(ix + ',' + iy); if (!l) continue;
+    for (const sg of l){ const m = lim[sg.t]; if (m && segDist(p, sg.a, sg.b) < m) return false; }
+  }
+  if (lim.inWater) for (const poly of area.polys) if (inPoly(p, poly)) return false;
+  return true;
+}
+function nearestRoad(area, p){
+  let best = 60; const gx = Math.floor(p.x/CELL), gy = Math.floor(p.y/CELL);
+  for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++){
+    const l = area.segs.get(ix + ',' + iy); if (!l) continue;
+    for (const sg of l) if (sg.t === 'road') best = Math.min(best, segDist(p, sg.a, sg.b));
+  }
+  return best;
+}
+
+const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
+function spacedFrom(list, q){ return list.every(o => dist(o, q) > 45); }
+function pickPlaces(area, c, want, taken){
+  const cands = [];
+  for (const el of area.pois){
     const t = el.tags || {}, k = kindOf(t); if (!k) continue;
     const lat = el.lat != null ? el.lat : el.center && el.center.lat, lng = el.lon != null ? el.lon : el.center && el.center.lon;
     if (lat == null || lng == null) continue;
     const osm = el.type[0] + el.id; if (taken.some(n => n.osm === osm)) continue;
+    const xy = area.pr.fwd(lat, lng), byWater = k[0] === 'Pier' || k[0] === 'Lighthouse' || k[0] === 'Viewpoint';
+    if (!clearOf(area, xy, byWater ? Object.assign({}, POI_CLEAR, {inWater:false}) : POI_CLEAR)) continue;   // e.g. art in a road median
     const q = {osm, lat, lng, kind:k[0], name:t.name || '', score:k[1] + (t.name ? 3 : 0) + E.rng()*1.5};
     q.d = dist(c, q); cands.push(q);
   }
   cands.sort((a, b) => b.score - a.score);
-  const out = [], spaced = q => taken.concat(out).every(o => dist(o, q) > 45);
-  for (const q of cands.filter(q => q.d <= 200)){ if (out.length >= 3) break; if (spaced(q)) out.push(q); }   // something reachable soon
-  for (const q of cands){ if (out.length >= want) break; if (!out.includes(q) && spaced(q)) out.push(q); }
-  return out;
+  const out = [];
+  for (const q of cands.filter(q => q.d <= 200)){ if (out.length >= 3) break; if (spacedFrom(taken.concat(out), q)) out.push(q); }
+  for (const q of cands){ if (out.length >= want) break; if (!out.includes(q) && spacedFrom(taken.concat(out), q)) out.push(q); }
+  return out.map(q => ({id:'o' + q.osm, osm:q.osm, src:'osm', name:q.name || q.kind, kind:q.kind,
+    prov:q.name ? `First pulled at ${q.name}` : `First pulled at ${article(q.kind)} ${q.kind.toLowerCase()}`, lat:q.lat, lng:q.lng, coolUntil:0}));
+}
+const WALK_KIND = {footway:['Footpath', 1], path:['Trail', 1], pedestrian:['Plaza', 2], cycleway:['Bike path', 0], bridleway:['Bridleway', 0], track:['Track', -1]};
+function pickWalkSpots(area, c, count, needNear, taken, r){
+  if (count <= 0 && needNear <= 0) return [];
+  const cands = [];
+  area.walks.forEach((w, wi) => {
+    const [kind, base] = WALK_KIND[w.t.highway] || ['Footpath', 0];
+    let carry = 15;                                                   // first sample 15 m in, then every 30 m
+    for (let i = 1; i < w.pts.length; i++){
+      const a = w.pts[i - 1], b = w.pts[i], L = Math.hypot(b.x - a.x, b.y - a.y);
+      let s = carry;
+      for (; s < L; s += 30){
+        const p = {x:a.x + (b.x - a.x)*s/L, y:a.y + (b.y - a.y)*s/L};
+        if (Math.hypot(p.x, p.y) > r || !clearOf(area, p, WALK_CLEAR)) continue;
+        const ll = area.pr.back(p.x, p.y);
+        cands.push({lat:ll.lat, lng:ll.lng, d:Math.hypot(p.x, p.y), kind, wname:w.t.name || '', wi,
+          score:base + (w.t.name ? 2 : 0) + Math.min(2, nearestRoad(area, p)/30) + E.rng()*2});
+      }
+      carry = s - L;
+    }
+  });
+  cands.sort((a, b) => b.score - a.score);
+  const out = [], all = () => taken.concat(out), perWay = new Map(), total = Math.max(count, needNear);
+  const take = (q, cap) => { const n = perWay.get(q.wi) || 0; if (n >= cap || out.includes(q) || !spacedFrom(all(), q)) return; out.push(q); perWay.set(q.wi, n + 1); };
+  for (const q of cands.filter(q => q.d <= 200)){ if (out.length >= needNear) break; take(q, 3); }
+  for (const q of cands){ if (out.length >= total) break; take(q, 3); }          // at most three per path...
+  for (const q of cands){ if (out.length >= total) break; take(q, Infinity); }   // ...unless nothing else fits
+  const used = new Set(taken.map(n => n.name)), names = NODE_NAMES.filter(n => !used.has(n)).sort(() => E.rng() - .5);
+  return out.map((q, i) => {
+    const name = q.wname || names[i % Math.max(1, names.length)] || 'Scratch Spot';
+    return {id:'w' + Date.now().toString(36) + i, src:'walk', name, kind:q.kind, prov:q.wname ? `First pulled on ${q.wname}` : `First pulled at ${name}`, lat:q.lat, lng:q.lng, coolUntil:0};
+  });
 }
 function randomNodes(c, count, taken){
   const used = new Set(taken.map(n => n.name)), names = NODE_NAMES.filter(n => !used.has(n)).sort(() => E.rng() - .5), out = [];
@@ -250,24 +358,28 @@ async function seedArea(c, fresh){
   if (seeding) return;
   seeding = true; lastSeedTry = Date.now();
   if (fresh){ nodes = []; seedCenters = []; markers.forEach(m => m.remove()); markers.clear(); }
-  const want = fresh ? 15 : 10, minimum = fresh ? 8 : 5;
-  let added = [], els = null;
-  if (P.nodeSource === 'osm'){
-    mapNote('Finding public places near you…');
-    els = await fetchPlaces(c, 650);
-    if (els) added = pickPlaces(els, c, want, nodes).map(q => ({id:'o' + q.osm, osm:q.osm, src:'osm', name:q.name || q.kind, kind:q.kind,
-      prov:q.name ? `First pulled at ${q.name}` : `First pulled at ${article(q.kind)} ${q.kind.toLowerCase()}`, lat:q.lat, lng:q.lng, coolUntil:0}));
+  const want = fresh ? 15 : 10, R = 650;
+  let added = [], area = null;
+  if (P.nodeSource !== 'random'){
+    mapNote('Finding places near you…');
+    area = await fetchArea(c, R);
     mapNote(null);
-    event('places_fetched', {ok:!!els, candidates:els ? els.length : 0, used:added.length});
+    if (area){
+      const places = P.nodeSource === 'osm' ? pickPlaces(area, c, want, nodes) : [];
+      const near = nodes.concat(places).filter(n => dist(c, n) <= 200).length;
+      const walk = pickWalkSpots(area, c, want - places.length, Math.max(0, 3 - near), nodes.concat(places), R);
+      added = places.concat(walk);
+      event('places_fetched', {ok:true, pois:area.pois.length, walkways:area.walks.length, places:places.length, walkSpots:walk.length});
+    } else event('places_fetched', {ok:false});
   }
-  if (added.length < minimum){
-    added = added.concat(randomNodes(c, minimum - added.length, nodes.concat(added)));
-    if (P.nodeSource === 'osm') mapNote(els ? 'Few public places mapped here, so some nodes are placed at random.' : 'Couldn’t reach map data, so nodes are placed at random for now.', 6000);
+  if (added.length < 3){
+    added = added.concat(randomNodes(c, (fresh ? 8 : 5) - added.length, nodes.concat(added)));
+    if (P.nodeSource !== 'random') mapNote(area ? 'Few walkable places are mapped here, so some nodes are placed at random.' : 'Couldn’t reach map data, so nodes are placed at random for now.', 6000);
   }
   nodes = nodes.concat(added); seedCenters.push({lat:c.lat, lng:c.lng});
   if (nodes.length > 150) nodes = nodes.slice(-150);
   store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('seedCenters', seedCenters);
-  event('nodes_seeded', {count:added.length, osm:added.filter(n => n.src === 'osm').length, fresh});
+  event('nodes_seeded', {count:added.length, osm:added.filter(n => n.src === 'osm').length, walk:added.filter(n => n.src === 'walk').length, fresh});
   seeding = false;
   refreshNodes();
 }

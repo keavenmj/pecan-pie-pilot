@@ -111,7 +111,7 @@
           </div>
           <div class="row"><label for="dMock">Mock location</label><select id="dMock"><option value="off">Off (real GPS)</option><option value="on">On: tap the map to walk</option></select></div>
           <div class="row"><label for="dWalk">Mock walk speed</label><select id="dWalk"><option value="1.4">1.4 m/s (walking)</option><option value="6">6 m/s</option><option value="40">40 m/s</option><option value="0">Teleport</option></select></div>
-          <div class="row"><label for="dSource">Node placement</label><select id="dSource"><option value="osm">Public places (OpenStreetMap)</option><option value="random">Random spots</option></select></div>
+          <div class="row"><label for="dSource">Node placement</label><select id="dSource"><option value="osm">Public places, then walkable spots</option><option value="walk">Walkable spots only</option><option value="random">Random spots</option></select></div>
           <div class="row"><label for="dVis">Visibility radius</label><input type="range" id="dVis" min="200" max="800" step="50"><output id="oVis"></output></div>
           <div class="row"><label for="dReach">Interaction radius</label><input type="range" id="dReach" min="30" max="150" step="5"><output id="oReach"></output></div>
           <div class="row"><label for="dAcc">Max GPS error</label><input type="range" id="dAcc" min="20" max="200" step="10"><output id="oAcc"></output></div>
