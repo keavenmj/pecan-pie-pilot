@@ -148,11 +148,17 @@ const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matche
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 
 /* ================= Card rendering ================= */
-function pipRow(rank){
+function pipRow(rank, extra){
   let h = '';
   for (let i = 1; i <= 4; i++) h += `<span class="pip${rank >= i ? ' on' : ''}"></span>`;
   h += `<span class="pip dia${rank >= 5 ? ' on' : ''}"></span>`;
-  return `<div class="pips" role="img" aria-label="Rank ${rank}, ${RANKS[rank-1]}">${h}</div>`;
+  return `<div class="pips"><span class="pip-set" role="img" aria-label="Rank ${rank}, ${RANKS[rank-1]}">${h}</span>${extra || ''}</div>`;
+}
+// Condition is an outcome of the scratch, not a hidden value, so it shows as a badge on the pip band after the reveal.
+function showGrade(g, animate){
+  const el = $('vGrade'); if (!el) return;
+  el.textContent = g; el.className = 'grade-badge shown g-' + g;
+  if (animate){ void el.offsetWidth; el.classList.add('land'); }
 }
 function renderCard(card, prov){
   const ed = card.run ? `Launch Ed. · Run ${card.run.label} of ${card.run.size}` : 'Launch Ed. · Evergreen';
@@ -162,12 +168,11 @@ function renderCard(card, prov){
     <div class="topline"><span class="sig"><b>${card.sig[0]}·${card.sig[1]}</b><b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
     <div class="banner"><span class="name">${card.name}</span><span class="ed">${ed}</span></div>
     <div class="art">${artSVG(card)}</div>
-    ${pipRow(card.rank)}
+    ${pipRow(card.rank, '<span class="grade-badge" id="vGrade" aria-live="polite"></span>')}
     <div class="desc unknown" id="desc">
       <div class="desc-grid">
         <div class="slot"><span class="lbl">Finish</span><span class="val" id="vHolo">?</span></div>
         <div class="slot"><span class="lbl">Print</span><span class="val" id="vPrint">?</span></div>
-        <div class="slot"><span class="lbl">Condition</span><span class="val" id="vGrade">?</span></div>
         <div class="slot"><span class="lbl">Token</span><span class="val" id="vToken">?</span></div>
       </div>
       <div class="cf">${STATS.map(k => `<div class="cfrow"><span class="lbl">${STAT_LABEL[k]}</span><div class="track" id="t-${k}"></div><span class="cfv" id="c-${k}">?</span></div>`).join('')}</div>
@@ -691,12 +696,12 @@ async function stagedReveal(card, p, pristine, row){
     else Sound.land(1);
   } else { setVal('vPrint', 'Evergr.'); Sound.land(1); }
   await wait(gap); if (!alive()) return;
-  setVal('vGrade', p.grade); Sound.land(2);
-  await wait(gap*.8); if (!alive()) return;
-  setVal('vToken', p.microGameToken); Sound.land(3);
+  setVal('vToken', p.microGameToken); Sound.land(2);
   await wait(gap); if (!alive()) return;
   await Promise.all(STATS.map((k, i) => countCF(card, p, k, i*90, 380 + R*60, alive)));
   if (!alive()) return;
+  await wait(gap*.8); if (!alive()) return;
+  showGrade(p.grade, !seq.skip); Sound.land(3);   // the verdict on how you scratched lands last
   if (!(p.isHolo && pristine)) Sound.reveal(R, false);
   seq.running = false;
   finishReveal(row, p, pristine);
@@ -763,7 +768,7 @@ function fillDescriptor(card, p){
   descEl.classList.remove('unknown'); descEl.classList.add('resolving');
   $('vHolo').textContent = p.isHolo ? 'Holo' : 'Normal';
   $('vPrint').textContent = p.printNumber > 0 ? `${p.printNumber}/${card.run.size}` : 'Evergr.';
-  $('vGrade').textContent = p.grade;
+  showGrade(p.grade, false);
   $('vToken').textContent = p.microGameToken;
   for (const k of STATS){
     const [lo, hi, fz] = card.cf[k], v = p.chanceFactors[k];

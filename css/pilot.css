@@ -165,3 +165,18 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .install-actions { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
 
 .tester-code a { color: var(--accent); font-weight: 700; white-space: nowrap; }
+
+/* ---------- Condition badge on the pip band ----------
+   Condition comes from the scratch itself, so it isn't hidden under the coating. It appears as a grading
+   sticker at the right end of the black pip band once the card resolves. */
+.desc-grid { grid-template-columns: repeat(3, 1fr); }
+.pip-set { display: flex; align-items: center; gap: 1.6cqw; }
+.grade-badge { position: absolute; right: 2.6cqw; top: 50%; transform: translateY(-50%); opacity: 0; pointer-events: none;
+  font-family: var(--font-display); font-weight: 700; font-size: 2.5cqw; letter-spacing: .09em; text-transform: uppercase; line-height: 1;
+  padding: .7cqw 1.7cqw; border-radius: 3cqw; border: .35cqw solid currentColor; background: rgba(255,255,255,.04); }
+.grade-badge.shown { opacity: 1; }
+.grade-badge.land { animation: stamp .38s cubic-bezier(.2,1.5,.4,1); }
+@keyframes stamp { 0% { opacity: 0; transform: translateY(-50%) scale(1.8) rotate(-8deg); } 100% { opacity: 1; transform: translateY(-50%) scale(1) rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .grade-badge.land { animation: none; } }
+.grade-badge.g-Pristine { color: #4CC096; } .grade-badge.g-Good { color: #6EA2E6; }
+.grade-badge.g-Fair { color: #D9B347; } .grade-badge.g-Poor { color: #E77C69; }

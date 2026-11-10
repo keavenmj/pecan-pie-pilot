@@ -46,7 +46,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '1.5';
+const APP_V = '1.6';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -745,12 +745,11 @@ function cardMarkup(card, inst, idx){
     <div class="topline"><span class="sig"><b>${card.sig[0]}·${card.sig[1]}</b><b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
     <div class="banner"><span class="name">${esc(card.name)}</span><span class="ed">${ed}</span></div>
     <div class="art">${E.artSVG(card)}</div>
-    ${E.pipRow(card.rank)}
+    ${E.pipRow(card.rank, inst ? `<span class="grade-badge shown g-${inst.grade}">${inst.grade}</span>` : '')}
     <div class="desc${inst ? '' : ' unknown'}${resid ? ' has-resid' : ''}">
       <div class="desc-grid">
         <div class="slot"><span class="lbl">Finish</span><span class="val">${v.holo}</span></div>
         <div class="slot"><span class="lbl">Print</span><span class="val">${v.print}</span></div>
-        <div class="slot"><span class="lbl">Condition</span><span class="val">${v.grade}</span></div>
         <div class="slot"><span class="lbl">Token</span><span class="val">${v.token}</span></div>
       </div>
       <div class="cf">${cf}</div>
