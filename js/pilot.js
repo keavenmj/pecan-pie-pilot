@@ -46,7 +46,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '1.7';
+const APP_V = '1.8';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -693,7 +693,7 @@ $('scratchKeep').addEventListener('click', () => {
   if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; store.set('nodes', nodes); } }
   if (ctx.source === 'daily'){ daily.last = Date.now(); store.set('daily', daily); }
   const pk = pendKey(ctx); if (pk && pending[pk]){ delete pending[pk]; store.set('pending', pending); }
-  event('card_kept_sealed', {source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank, newSlot:firstCopy});
+  event('card_kept_sealed', {instId:inst.id, source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank, newSlot:firstCopy});
   closeScratch(); updateChips();
   mapNote(`Kept ${card.name} sealed. It's waiting in Collection, under My cards.`, 4000);
 });
@@ -722,7 +722,7 @@ window.Pilot = {
         if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
       }
       const pk = pendKey(ctx); if (pending[pk]){ delete pending[pk]; store.set('pending', pending); }
-      event('scratch_reveal', {source:'sealed', keptFrom:inst ? inst.source : '', node:inst ? inst.node : null, card:card.id, rank:card.rank, grade:p.grade,
+      event('scratch_reveal', {source:'sealed', instId:ctx.instId, keptFrom:inst ? inst.source : '', node:inst ? inst.node : null, card:card.id, rank:card.rank, grade:p.grade,
         computedGrade:row.computedGrade, sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken,
         durationMs:row.durationMs, strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:false,
         heldMs:inst ? Date.now() - new Date(inst.at).getTime() : null});

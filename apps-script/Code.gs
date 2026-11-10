@@ -208,6 +208,9 @@ function buildSummary_() {
     ['New set slots filled', sc.filter(function (r) { return r.new_slot === true; }).length]
   ]]);
 
+  // Sealed cards: who keeps them, which ranks, and how long they're held before scratching.
+  sealedBlocks_(ev, sc).forEach(function (b) { blocks.push(b); });
+
   // Write the blocks down the sheet
   let row = 1;
   sum.getRange(row, 1).setValue('Pecan Pie pilot summary').setFontWeight('bold').setFontSize(14);
@@ -221,6 +224,63 @@ function buildSummary_() {
     row += vals.length + 1;
   });
   sum.autoResizeColumns(1, 6);
+}
+
+/* ---------------- Sealed cards ---------------- */
+
+function sealedBlocks_(ev, sc) {
+  const now = Date.now();
+  const kept = [], later = {};
+  ev.forEach(function (r) {
+    if (r.type !== 'card_kept_sealed' && r.type !== 'scratch_reveal') return;
+    let d = {}; try { d = JSON.parse(r.data || '{}'); } catch (e) {}
+    const at = r.at instanceof Date ? r.at.getTime() : NaN;
+    if (r.type === 'card_kept_sealed') kept.push({id: d.instId || '', tester: r.tester, rank: Number(d.rank), newSlot: d.newSlot === true, at: at});
+    else if (d.source === 'sealed' && d.instId) later[d.instId] = {at: at, heldMs: Number(d.heldMs)};
+  });
+  // Pulls = every card taken from a node or the daily, whether scratched on the spot or kept sealed.
+  const scratchedOnSpot = sc.filter(function (r) { return r.source === 'node' || r.source === 'daily'; });
+  const pulls = kept.length + scratchedOnSpot.length;
+  const holds = [], stillSealed = [];
+  kept.forEach(function (k) {
+    const l = k.id && later[k.id];
+    if (l){ const h = isFinite(l.heldMs) ? l.heldMs : l.at - k.at; if (isFinite(h) && h >= 0){ k.held = h; holds.push(h); } }
+    else if (isFinite(k.at)) stillSealed.push(now - k.at);
+  });
+  const testers = {}; kept.forEach(function (k) { if (k.tester) testers[k.tester] = true; });
+  const dupKept = kept.filter(function (k) { return !k.newSlot; }).length;
+  const firstPulls = scratchedOnSpot.filter(function (r) { return r.new_slot === true; }).length + kept.filter(function (k) { return k.newSlot; }).length;
+  const dupPulls = pulls - firstPulls;
+
+  const overview = [
+    ['Cards kept sealed', kept.length],
+    ['Share of pulls kept sealed', pulls ? round_(kept.length / pulls, 2) : ''],
+    ['Testers who kept at least one sealed', Object.keys(testers).length],
+    ['Scratched later', holds.length],
+    ['Still sealed', stillSealed.length],
+    ['Share of duplicates kept sealed', dupPulls ? round_(dupKept / dupPulls, 2) : ''],
+    ['Share of first copies kept sealed', firstPulls ? round_((kept.length - dupKept) / firstPulls, 2) : ''],
+    ['Average time held before scratching', dur_(avg_(holds))],
+    ['Median time held before scratching', dur_(median_(holds))],
+    ['Longest time held before scratching', dur_(holds.length ? Math.max.apply(null, holds) : '')],
+    ['Longest still sealed (so far)', dur_(stillSealed.length ? Math.max.apply(null, stillSealed) : '')]
+  ];
+  const byRank = [['Rank', 'Kept sealed', 'Share of that rank\'s pulls', 'Scratched later', 'Average hold']];
+  RANKS.forEach(function (name, i) {
+    const k = kept.filter(function (x) { return x.rank === i + 1; });
+    const spot = scratchedOnSpot.filter(function (r) { return Number(r.rank) === i + 1; }).length;
+    const h = k.filter(function (x) { return isFinite(x.held); }).map(function (x) { return x.held; });
+    byRank.push([name, k.length, (k.length + spot) ? round_(k.length / (k.length + spot), 2) : '', h.length, dur_(avg_(h))]);
+  });
+  return [['Sealed cards', overview], ['Sealed cards by rank', byRank]];
+}
+function dur_(ms) {
+  if (ms === '' || !isFinite(ms)) return '';
+  const min = ms / 60000;
+  if (min < 90) return Math.round(min) + ' min';
+  const h = min / 60;
+  if (h < 48) return round_(h, 1) + ' h';
+  return round_(h / 24, 1) + ' days';
 }
 
 /* ---------------- Helpers ---------------- */
