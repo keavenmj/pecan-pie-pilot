@@ -134,6 +134,12 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .card .foil { z-index: 1; }
 .card .desc { z-index: 2; }
 
+/* Values panel framed in black, with the rank pips on a black tab rising from that frame. Both sit in the
+   layer above the foil, so the rainbow runs around them and the cream pips always read against black. */
+.card .desc { box-shadow: 0 0 0 1.1cqw #0b0e12; }
+.card .pips { position: relative; z-index: 2; align-self: center; background: #0b0e12;
+  padding: 1.2cqw 3.2cqw 1.4cqw; margin: 0 0 -1.7cqw; border-radius: 2.4cqw 2.4cqw 0 0; }
+
 /* ---------- Scratch transition: the token flies into the card ---------- */
 .flyer { position: fixed; z-index: 2000; pointer-events: none; transform-origin: 50% 50%; will-change: transform, opacity; }
 .fly-face { position: absolute; inset: 0; border-radius: 4.5% / 3.2%; background: #1B2632; display: grid; place-items: center;
