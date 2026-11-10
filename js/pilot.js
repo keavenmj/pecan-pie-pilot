@@ -31,7 +31,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '0.7';
+const APP_V = '0.8';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -557,7 +557,7 @@ function snapshotProgress(){
   const b = new Uint8Array(m.length); for (let i = 0; i < m.length; i++) b[i] = Math.round(m[i]*255);
   let bin = ''; for (let i = 0; i < b.length; i += 4096) bin += String.fromCharCode.apply(null, b.subarray(i, i + 4096));
   return {mw:st.mw, mh:st.mh, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs,
-    elapsed:st.firstT ? Math.round((st.lastMoveT || performance.now()) - st.firstT) : 0};
+    elapsed:st.firstT ? Math.max(0, Math.round((st.lastMoveT || performance.now()) - st.firstT)) : 0};
 }
 function restoreProgress(pr){
   const st = E.state; if (!pr || !st.mask) return;
@@ -568,9 +568,19 @@ function restoreProgress(pr){
   }
   st.strokes = pr.strokes || 0; st.pathLen = pr.pathLen || 0; st.drawMs = pr.drawMs || 0;
   st.firstT = performance.now() - (pr.elapsed || 0);
+  st.lastMoveT = performance.now();   // the engine's last-move time belongs to the earlier visit; restart it here
   st.maskDirty = true; st.dirty = true;
   $('hint').textContent = 'Picking up where you left off.';
 }
+// Save an unfinished scratch: on Back, and whenever the page is hidden or closed (the phone may discard it).
+function saveProgress(){
+  const key = current && pendKey(current);
+  if (!key || !pending[key] || E.revealed) return;
+  if (E.started){ const pr = snapshotProgress(); if (pr) pending[key].progress = pr; }
+  store.set('pending', pending);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && current) saveProgress(); });
+window.addEventListener('pagehide', () => { if (current) saveProgress(); });
 let current = null;
 function openScratch(card, ctx, fromEl, progress){
   current = ctx;
@@ -630,11 +640,7 @@ function closeScratch(){
 }
 $('scratchBack').addEventListener('click', () => {
   if (E.revealed || E.sequenceRunning) return closeScratch();
-  const key = current && pendKey(current);
-  if (key && pending[key]){
-    if (E.started){ const pr = snapshotProgress(); if (pr) pending[key].progress = pr; }
-    store.set('pending', pending);
-  }
+  saveProgress();
   event('scratch_leave', {source:current && current.source, started:E.started, coverage:+(E.state.cells ? Array.from(E.state.cells).reduce((a, b) => a + b, 0)/64 : 0).toFixed(3)});
   closeScratch();
 });
