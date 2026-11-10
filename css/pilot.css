@@ -140,7 +140,7 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .card .desc { box-shadow: 0 0 0 1.1cqw #0b0e12; }
 /* Full-width band: extends past the panel by the frame's thickness (1.1cqw) so its edges line up with the frame,
    and its top corners follow the frame's outer radius (panel radius 1.8cqw + 1.1cqw). */
-.card .pips { position: relative; z-index: 2; align-self: stretch; background: #0b0e12;
+.card .pips { position: relative; z-index: 3; align-self: stretch; background: #0b0e12;   /* above the panel, so the condition stamp can overlap it */
   padding: 1.2cqw 0 1.4cqw; margin: 0 -1.1cqw -1.7cqw; border-radius: 2.9cqw 2.9cqw 0 0; }
 
 /* ---------- Scratch transition: the token flies into the card ---------- */
@@ -174,8 +174,9 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .grade-badge { position: absolute; right: 2.2cqw; bottom: 1cqw; opacity: 0; pointer-events: none; transform-origin: 60% 60%;
   font-family: var(--font-display); font-weight: 700; font-size: 4.9cqw; letter-spacing: .06em; text-transform: uppercase; line-height: 1;
   padding: 1.35cqw 2.6cqw 1.2cqw; border-radius: 1.9cqw; color: #10141a; background: var(--gc, #ccc);
-  box-shadow: inset 0 0 0 .45cqw rgba(16,20,26,.55), inset 0 0 0 .8cqw var(--gc, #ccc), inset 0 0 0 1.05cqw rgba(16,20,26,.35), 0 .8cqw 1.6cqw -.4cqw rgba(0,0,0,.7); }
-/* Sits on the band's right end and rises over the bottom edge of the art, like a sticker slapped across the seam. */
+  box-shadow: inset 0 0 0 .45cqw rgba(16,20,26,.55), inset 0 0 0 .8cqw var(--gc, #ccc), inset 0 0 0 1.05cqw rgba(16,20,26,.35), 0 0 0 .35cqw #0b0e12, 0 .8cqw 1.6cqw -.4cqw rgba(0,0,0,.7); }
+/* Sits on the band's right end and rises over the bottom edge of the art, like a sticker slapped across the seam.
+   The band is layered above the panel, so where the tilted stamp dips onto the panel it sits on top; a thin black outline separates it. */
 .grade-badge.shown { opacity: 1; transform: rotate(-5deg); }
 /* Lifts into view, hangs for a beat, then slams down with a small bounce. Impact is at 72% (about 650 ms). */
 .grade-badge.stamping { animation: stamp .9s both; }
