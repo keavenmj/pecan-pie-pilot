@@ -1,6 +1,6 @@
 # Pecan Pie end-of-week survey
 
-The survey is built into the pilot at `survey.html` (linked from the tester guide and the bottom of the Collection screen). Answers go to the **Survey** tab of the pilot Sheet. This file is the reference copy: each question notes its type and which item in the design doc's "What to measure" list it answers. To change a question, edit the `Q` list in `survey.html` and the matching `SURVEY_QS` list in `apps-script/Code.gs`. The play logs already cover opens, scratches per session and retention, so the survey asks only what logs can't see: why people played, and how the reveal felt.
+The survey is built into the pilot at `survey.html` (linked from the tester guide and the bottom of the Collection screen). Answers go to the **Survey** tab of the pilot Sheet. This file is the reference copy: each question notes its type and which item in the design doc's "What to measure" list it answers. To change a question, edit the `Q` list in `survey.html` and the matching `SURVEY_QS` list in `apps-script/Code.gs`. New questions go at the end of `SURVEY_QS`; the receiver adds their columns to an existing Survey tab. The play logs already cover opens, scratches per session and retention, so the survey asks only what logs can't see: why people played, and how the reveal felt.
 
 No email or sign-in is collected; the tester code links answers to logs and is filled in from the phone. It takes about 5 minutes to answer, and answers are saved on the phone as the tester goes.
 
@@ -98,15 +98,31 @@ No email or sign-in is collected; the tester code links answers to logs and is f
     *Checkboxes:* I didn't keep any sealed / To scratch later / To keep as a collectible / In case trading is added / I forgot about them
     *Answers:* whether the sealed card idea has pull on its own, ahead of trading.
 
+## Bingo and dice
+
+24. **Did your bingo board ever change which spot you walked to?**
+    *Multiple choice:* Never / Once or twice / Several times / Most days
+    *Answers:* whether bingo balls on the map steer walking, the point of the three rings.
+
+25. **How much did you want to fill your bingo board?**
+    *Linear scale, 1 to 5:* Didn't care → Really wanted to
+
+26. **Did you add dice before scratching?**
+    *Multiple choice:* Never / Once or twice / Often / Every time I had one
+
+27. **How much did dice add to the game?**
+    *Linear scale, 1 to 5:* Nothing → A lot
+    *Answers:* whether giving Chance Factors a lever makes them matter, or dice are just noise.
+
 ## Anything else
 
-24. **What was your favorite moment?**
+28. **What was your favorite moment?**
     *Paragraph.*
 
-25. **What was most confusing or frustrating?**
+29. **What was most confusing or frustrating?**
     *Paragraph.*
 
-26. **Anything else you'd like to tell us?**
+30. **Anything else you'd like to tell us?**
     *Paragraph, optional.*
 
 ---

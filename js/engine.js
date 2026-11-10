@@ -72,7 +72,7 @@ function gradeFor(sigma, s){
 }
 
 /* ================= Payload (pure apart from rng) ================= */
-function rollPayload(card, grade, force, holoRate){
+function rollPayload(card, grade, force, holoRate, bonus){
   const isHolo = force.holo === 'holo' ? true : force.holo === 'normal' ? false : rng() < holoRate/100;
   let printNumber = -1;
   if (card.run){
@@ -92,6 +92,7 @@ function rollPayload(card, grade, force, holoRate){
       v = base + fudge*soft;                              // never clamped at the ceiling
       if (v < lo) v = lo + (lo - v);                      // no floor breaks: a dip below the floor bounces back up
     }
+    v += bonus || 0;                                      // a committed die adds the same amount to every stat
     cf[k] = Math.round(v*10)/10;
     broke[k] = cf[k] > hi ? 'ceiling' : null;
   }
@@ -154,6 +155,19 @@ function pipRow(rank, extra){
   h += `<span class="pip dia${rank >= 5 ? ' on' : ''}"></span>`;
   return `<div class="pips"><span class="pip-set" role="img" aria-label="Rank ${rank}, ${RANKS[rank-1]}">${h}</span>${extra || ''}</div>`;
 }
+// Bingo square: a per-copy border value, shown as a ball in its column's color (the same ball appears on the map).
+const BALL_COL = {B:'#3D7FD9', I:'#D9534A', N:'#E9E6DD', G:'#3DA65F', O:'#EE8C2E'};
+function ballToken(ball){
+  return `<span class="btok" style="--bc:${BALL_COL[ball.l] || '#888'}" role="img" aria-label="Bingo ${ball.l} ${ball.n}"><span class="face"><span class="l">${ball.l}</span><span class="n">${ball.n}</span></span></span>`;
+}
+// Stat-Mod Dice: summed dice per rank, so higher ranks cluster around a mean. The total adds flat to all four stats.
+const DICE = {1:[1, 4], 2:[1, 6], 3:[1, 8], 4:[2, 8], 5:[3, 8]};
+const dieName = rank => { const [n, d] = DICE[rank]; return (n > 1 ? n : '') + 'd' + d; };
+function rollDie(rank){
+  const [n, d] = DICE[rank], faces = [];
+  for (let i = 0; i < n; i++) faces.push(1 + Math.floor(rng()*d));
+  return {rank, faces, total:faces.reduce((a, b) => a + b, 0)};
+}
 // Condition is an outcome of the scratch, not a hidden value, so it shows as a badge on the pip band after the reveal.
 function showGrade(g, animate){
   const el = $('vGrade'); if (!el) return;
@@ -174,7 +188,7 @@ function renderCard(card, prov){
   const today = new Date().toLocaleDateString('en-US');
   stage.innerHTML = `
   <div class="card" id="card">
-    <div class="topline"><span class="sig"><b>${card.sig[0]}·${card.sig[1]}</b><b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
+    <div class="topline${state.ctx.ball ? ' has-ball' : ''}"><span class="sig">${state.ctx.ball ? ballToken(state.ctx.ball) : `<b>${card.sig[0]}·${card.sig[1]}</b>`}<b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
     <div class="banner"><span class="name">${card.name}</span><span class="ed">${ed}</span></div>
     <div class="art">${artSVG(card)}</div>
     ${pipRow(card.rank, '<span class="grade-badge" id="vGrade" aria-live="polite"></span>')}
@@ -185,6 +199,7 @@ function renderCard(card, prov){
         <div class="slot"><span class="lbl">Token</span><span class="val" id="vToken">?</span></div>
       </div>
       <div class="cf">${STATS.map(k => `<div class="cfrow"><span class="lbl">${STAT_LABEL[k]}</span><div class="track" id="t-${k}"></div><span class="cfv" id="c-${k}">?</span></div>`).join('')}</div>
+      <div class="die-chip" id="vDie" hidden></div>
       <div class="glow" id="glow"></div>
       <canvas class="scratch" id="scratch" aria-label="Scratch surface"></canvas>
       <canvas class="heat" id="heat" aria-hidden="true"></canvas>
@@ -639,7 +654,9 @@ function resolve(st){
   const computed = gradeFor(st.sigmaW, settings);
   const force = forceOpts();
   const grade = force.grade === 'auto' ? computed : force.grade;
-  const p = rollPayload(state.card, grade, force, settings.holoRate);
+  const die = state.ctx.die ? rollDie(state.ctx.die) : null;
+  const p = rollPayload(state.card, grade, force, settings.holoRate, die ? die.total : 0);
+  p.die = die;
   state.payload = p;
   scratchEl.style.pointerEvents = 'none';
   const pristine = grade === 'Pristine';
@@ -655,6 +672,7 @@ function resolve(st){
     broke: STATS.filter(k => p.broke[k]).map(k => k + ':' + p.broke[k]).join(' '), token: p.microGameToken,
     durationMs: durMs, strokes: state.strokes, speedPxS: speed, pointer: state.pointerType, forced: Object.entries(force).filter(([,v]) => v !== 'auto').map(([k,v]) => k+'='+v).join(' '),
     haze: settings.haze, peeks: 0, fx: [settings.coat].concat(['Shavings','Audio','Tension','Staged'].filter(k => settings['fx' + k]).map(k => k === 'Shavings' ? 'Debris' : k)).join(' '),
+    dieRank: die ? die.rank : '', dieRoll: die ? die.total : '',
     cells: cells.map(c => +c.toFixed(3))
   };
   state.row = row;
@@ -707,6 +725,7 @@ async function stagedReveal(card, p, pristine, row){
   await wait(gap); if (!alive()) return;
   setVal('vToken', p.microGameToken); Sound.land(2);
   await wait(gap); if (!alive()) return;
+  if (p.die){ await rollDieChip(p.die, 420 + R*60, alive); if (!alive()) return; await wait(gap*.7); if (!alive()) return; }
   await Promise.all(STATS.map((k, i) => countCF(card, p, k, i*90, 380 + R*60, alive)));
   if (!alive()) return;
   await wait(gap*.8); if (!alive()) return;
@@ -724,6 +743,21 @@ async function rollPrint(size, final, dur, alive){
     await frame();
   }
   if (alive()) setVal('vPrint', `${final}/${size}`);
+}
+// The die tumbles through random faces, then lands on its total; the stats then count up with the bonus included.
+function dieChipHTML(die, total){ return `<span class="die-face">${dieName(die.rank)}</span><b>+${total}</b>`; }
+async function rollDieChip(die, dur, alive){
+  const el = $('vDie'); if (!el) return;
+  el.hidden = false; el.className = 'die-chip rolling r' + die.rank;
+  const [n, d] = DICE[die.rank], t0 = performance.now(); let lastT = 0;
+  while (!seq.skip && alive()){
+    const now = performance.now(), k = (now - t0)/dur; if (k >= 1) break;
+    if (now - lastT > 45 + 160*k*k){ lastT = now; let t = 0; for (let i = 0; i < n; i++) t += 1 + Math.floor(rng()*d); el.innerHTML = dieChipHTML(die, t); Sound.tick(.8); }
+    await frame();
+  }
+  if (!alive()) return;
+  el.innerHTML = dieChipHTML(die, die.total); el.className = 'die-chip landed r' + die.rank;
+  if (!seq.skip){ Sound.hit(.7); vibrate(16); }
 }
 async function countCF(card, p, k, delay, dur, alive){
   await seqWait(delay);
@@ -777,6 +811,7 @@ function fillDescriptor(card, p){
   descEl.classList.remove('unknown'); descEl.classList.add('resolving');
   $('vHolo').textContent = p.isHolo ? 'Holo' : 'Normal';
   $('vPrint').textContent = p.printNumber > 0 ? `${p.printNumber}/${card.run.size}` : 'Evergr.';
+  if (p.die){ const el = $('vDie'); el.hidden = false; el.className = 'die-chip landed r' + p.die.rank; el.innerHTML = dieChipHTML(p.die, p.die.total); }
   showGrade(p.grade, false);
   $('vToken').textContent = p.microGameToken;
   for (const k of STATS){
@@ -1041,5 +1076,6 @@ requestAnimationFrame(tick);
 // Test hook
 window.__lab = {state, settings, seq, makeWeights, gridStats, gradeFor, rollPayload, CARDS, get log(){ return log; }};
 window.Engine = {newCard, CARDS, RANKS, STATS, STAT_LABEL, artSVG, pipRow, paintSurface, cfGeom, settings, state, store, esc, rng, Sound,
+  ballToken, BALL_COL, DICE, dieName, rollDie, dieChipHTML,
   get revealed(){ return state.revealed; }, get started(){ return state.strokes > 0; }, get sequenceRunning(){ return seq.running; }};
 })();

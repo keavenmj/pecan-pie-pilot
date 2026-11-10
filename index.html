@@ -17,11 +17,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Alegreya+SC:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
-<link rel="stylesheet" href="css/engine.css?v=2.4">
-<link rel="stylesheet" href="css/pilot.css?v=2.4">
+<link rel="stylesheet" href="css/engine.css?v=2.5">
+<link rel="stylesheet" href="css/pilot.css?v=2.5">
 </head>
 <body>
 <div class="app" id="app">
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <!-- ===== Map ===== -->
   <section class="view view-map" id="vMap">
@@ -30,6 +31,7 @@
       <div class="brand">Pecan Pie</div>
       <button class="chip" id="setChip" type="button">Harbor Lights 0/12</button>
       <button class="chip daily" id="dailyBtn" type="button">Daily card</button>
+      <button class="chip dice" id="diceChip" type="button">Basic die</button>
     </div>
     <div class="mapnote" id="mapNote" role="status" hidden></div>
     <div class="install-tip" id="installTip" role="dialog" aria-label="Add Pecan Pie to your home screen" hidden>
@@ -69,9 +71,14 @@
       <div class="scratch-where" id="scratchWhere"></div>
       <button class="btn" id="scratchKeep" type="button" hidden>Keep sealed</button>
     </div>
+    <div class="die-pick" id="diePick" role="dialog" aria-label="Add a die" hidden>
+      <div class="die-pick-head"><div><b>Add a die</b><small>Rolled when the card resolves. The total is added to all four stats.</small></div><button class="btn" id="diePickClose" type="button" aria-label="Close">✕</button></div>
+      <div id="diePickList"></div>
+    </div>
     <div class="bench">
       <div class="specimen">
         <div class="card-stage" id="stage"></div>
+        <button class="btn die-btn" id="scratchDie" type="button" hidden>Add a die</button>
         <p class="hint" id="hint">Scratch the lower panel.</p>
         <button class="btn primary wide" id="scratchDone" type="button" hidden>Back to the map</button>
       </div>
@@ -99,9 +106,10 @@
         <div class="seg" role="tablist">
           <button type="button" role="tab" id="segCat" aria-selected="true">Set</button>
           <button type="button" role="tab" id="segAll" aria-selected="false">My cards</button>
+          <button type="button" role="tab" id="segBingo" aria-selected="false">Bingo</button>
         </div>
       </div>
-      <div class="filter-row">
+      <div class="filter-row" id="setFilterRow">
         <label for="setFilter">Set</label>
         <select id="setFilter"><option value="harbor">Harbor Lights</option></select>
       </div>
@@ -130,10 +138,18 @@
           <div class="row"><label for="dReach">Interaction radius</label><input type="range" id="dReach" min="30" max="150" step="5"><output id="oReach"></output></div>
           <div class="row"><label for="dAcc">Max GPS error</label><input type="range" id="dAcc" min="20" max="200" step="10"><output id="oAcc"></output></div>
           <div class="row"><label for="dCool">Node cooldown</label><input type="range" id="dCool" min="0" max="24" step="1"><output id="oCool"></output></div>
+          <div class="row"><label for="dRingMid">Ball ring (middle)</label><input type="range" id="dRingMid" min="100" max="400" step="25"><output id="oRingMid"></output></div>
+          <div class="row"><label for="dRingNear">Exact-match ring (near)</label><input type="range" id="dRingNear" min="50" max="250" step="25"><output id="oRingNear"></output></div>
           <div class="btnrow">
             <button class="btn" id="dReseed" type="button">Reseed nodes around me</button>
             <button class="btn" id="dReady" type="button">Make all nodes ready</button>
             <button class="btn" id="dDaily" type="button">Reset daily card</button>
+          </div>
+          <div class="btnrow">
+            <button class="btn" id="dDice" type="button">Give one die of each rank</button>
+            <button class="btn" id="dCharge" type="button">Charge basic die</button>
+            <button class="btn" id="dDaub" type="button">Fill a bingo square</button>
+            <button class="btn" id="dBoard" type="button">New bingo board</button>
           </div>
           <div class="row"><label for="dTester">Tester name</label><input type="text" id="dTester" autocomplete="off"></div>
           <div class="row"><label for="dHook">Log endpoint</label><input type="url" id="dHook" placeholder="https://script.google.com/…" autocomplete="off"></div>
@@ -226,10 +242,10 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/maplibre/maplibre-gl.js"></script>
 <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
-<script src="js/mapstyle.js?v=2.4"></script>
-<script src="js/engine.js?v=2.4"></script>
+<script src="js/mapstyle.js?v=2.5"></script>
+<script src="js/engine.js?v=2.5"></script>
 <!-- config.js is tiny and edited by hand, so always fetch it fresh rather than from cache -->
 <script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/pilot.js?v=2.4"></script>
+<script src="js/pilot.js?v=2.5"></script>
 </body>
 </html>

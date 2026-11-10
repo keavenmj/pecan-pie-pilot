@@ -8,11 +8,13 @@
 
 const EVENT_COLS = ['received_at', 'at', 'day', 'tester', 'session', 'type', 'id', 'app', 'platform', 'standalone', 'data'];
 const SCRATCH_COLS = ['received_at', 'at', 'day', 'tester', 'session', 'source', 'place_src', 'place_kind', 'card', 'rank', 'grade',
-  'computed_grade', 'sigma_w', 'holo', 'print', 'low_print', 'broke', 'token', 'duration_ms', 'strokes', 'speed_px_s', 'coverage', 'new_slot', 'fx'];
+  'computed_grade', 'sigma_w', 'holo', 'print', 'low_print', 'broke', 'token', 'duration_ms', 'strokes', 'speed_px_s', 'coverage', 'new_slot', 'fx',
+  'ball', 'daubed', 'die_rank', 'die_roll'];
 // Survey columns stay in this order so the tab reads like a form export. Answers to questions not listed here land in 'extra'.
 const SURVEY_QS = ['code', 'phone', 'installed', 'enjoy', 'keep_playing', 'open_reasons', 'blockers', 'walked', 'spots_sensible', 'spots_unsafe',
   'scratch_satisfying', 'reveal_feel', 'condition_notice', 'scratch_care', 'peek_found', 'residue_bother', 'holo_feel', 'print_attention',
-  'stats_look', 'gold_stat', 'set_want', 'tabs_clear', 'sealed_why', 'favorite', 'frustrating', 'other'];
+  'stats_look', 'gold_stat', 'set_want', 'tabs_clear', 'sealed_why', 'favorite', 'frustrating', 'other',
+  'bingo_walk', 'bingo_want', 'dice_use', 'dice_feel'];
 const SURVEY_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone'].concat(SURVEY_QS, ['extra']);
 const PROBLEM_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone', 'area', 'severity', 'what', 'contact', 'diagnostics'];
 const META_KEYS = ['at', 'day', 'tester', 'session', 'type', 'id', 'app', 'platform', 'standalone'];
@@ -51,7 +53,8 @@ function doPost(e) {
         if (x.type === 'scratch_reveal') {
           scRows.push([now, date_(x.at), day_(x.day), str_(x.tester), str_(x.session), str_(x.source), str_(x.placeSrc), str_(x.placeKind),
             str_(x.card), num_(x.rank), str_(x.grade), str_(x.computedGrade), num_(x.sigmaW), x.holo === true, num_(x.print), x.lowPrint === true,
-            str_(x.broke), str_(x.token), num_(x.durationMs), num_(x.strokes), num_(x.speedPxS), num_(x.coverage), x.newSlot === true, str_(x.fx)]);
+            str_(x.broke), str_(x.token), num_(x.durationMs), num_(x.strokes), num_(x.speedPxS), num_(x.coverage), x.newSlot === true, str_(x.fx),
+            str_(x.ball), x.daubed === true, num_(x.dieRank), num_(x.dieRoll)]);
         }
         if (x.type === 'survey_response') {
           const a = (x.answers && typeof x.answers === 'object') ? x.answers : {}, extra = {};
@@ -64,10 +67,10 @@ function doPost(e) {
             str_(x.area), str_(x.severity), str_(x.what, 3000), str_(x.contact), str_(JSON.stringify(x.diag || {}), 5000)]);
         }
       });
-      append_(sheet_(ss, 'Events', EVENT_COLS), evRows);
-      append_(sheet_(ss, 'Scratches', SCRATCH_COLS), scRows);
-      if (svRows.length) append_(sheet_(ss, 'Survey', SURVEY_COLS), svRows);
-      if (prRows.length) append_(sheet_(ss, 'Problems', PROBLEM_COLS), prRows);
+      append_(sheet_(ss, 'Events', EVENT_COLS), EVENT_COLS, evRows);
+      append_(sheet_(ss, 'Scratches', SCRATCH_COLS), SCRATCH_COLS, scRows);
+      if (svRows.length) append_(sheet_(ss, 'Survey', SURVEY_COLS), SURVEY_COLS, svRows);
+      if (prRows.length) append_(sheet_(ss, 'Problems', PROBLEM_COLS), PROBLEM_COLS, prRows);
     } finally {
       lock.releaseLock();
     }
@@ -234,6 +237,7 @@ function buildSummary_() {
 
   // Sealed cards: who keeps them, which ranks, and how long they're held before scratching.
   sealedBlocks_(ev, sc).forEach(function (b) { blocks.push(b); });
+  bingoDiceBlocks_(ev, sc).forEach(function (b) { blocks.push(b); });
 
   // Write the blocks down the sheet
   let row = 1;
@@ -251,6 +255,40 @@ function buildSummary_() {
 }
 
 /* ---------------- Sealed cards ---------------- */
+
+// Bingo and dice: does the board pull people around, and do dice get used (and do they produce gold stats)?
+function bingoDiceBlocks_(ev, sc) {
+  const data = function (r) { try { return JSON.parse(r.data || '{}'); } catch (e) { return {}; } };
+  const of = function (t) { return ev.filter(function (r) { return r.type === t; }); };
+  const daubs = of('bingo_daub'), lines = of('bingo_line'), blackouts = of('bingo_blackout'), earned = of('die_earned'), commits = of('die_commit');
+  const who = function (rows) { const o = {}; rows.forEach(function (r) { o[r.tester] = true; }); return Object.keys(o).length; };
+  const bySrc = {}; earned.forEach(function (r) { const k = data(r).from || 'unknown'; bySrc[k] = (bySrc[k] || 0) + 1; });
+  const withDie = sc.filter(function (r) { return Number(r.die_rank) > 0; }), noDie = sc.filter(function (r) { return !(Number(r.die_rank) > 0); });
+  const goldShare = function (rows) { return rows.length ? round_(rows.filter(function (r) { return String(r.broke || '') !== ''; }).length / rows.length, 2) : ''; };
+  const ballCards = sc.filter(function (r) { return r.ball; });
+  const b1 = [
+    ['Testers who daubed at least one square', who(daubs)],
+    ['Squares daubed', daubs.length],
+    ['Share of collected cards that daubed a square', ballCards.length ? round_(ballCards.filter(function (r) { return r.daubed === true; }).length / ballCards.length, 2) : ''],
+    ['Testers with at least one line', who(lines)],
+    ['Lines completed', lines.length],
+    ['Blackouts', blackouts.length],
+    ['Dice earned from bingo lines', (bySrc.bingo_line || 0) + (bySrc.blackout || 0)],
+    ['Dice picked up from caches', bySrc.cache || 0],
+    ['Basic die charges', of('basic_die_charged').length],
+    ['Dice used', commits.length],
+    ['Testers who used a die', who(commits)],
+    ['Average die roll', round_(avg_(withDie.map(function (r) { return Number(r.die_roll); })), 1)],
+    ['Cards with a gold stat, with a die', goldShare(withDie)],
+    ['Cards with a gold stat, without a die', goldShare(noDie)]
+  ];
+  const ranks = [['Die rank', 'Used', 'Average roll']];
+  RANKS.forEach(function (name, i) {
+    const rows = withDie.filter(function (r) { return Number(r.die_rank) === i + 1; });
+    ranks.push([name, rows.length, round_(avg_(rows.map(function (r) { return Number(r.die_roll); })), 1)]);
+  });
+  return [['Bingo and dice', b1], ['Dice used by rank', ranks]];
+}
 
 function sealedBlocks_(ev, sc) {
   const now = Date.now();
@@ -318,8 +356,20 @@ function sheet_(ss, name, cols) {
   }
   return sh;
 }
-function append_(sh, rows) {
-  if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+// Rows are written by column name, not position: columns added in a later version are appended to the header,
+// so a tab created by an older version of this script keeps lining up.
+function append_(sh, cols, rows) {
+  if (!rows.length) return;
+  const width = Math.max(1, sh.getLastColumn ? sh.getLastColumn() : cols.length);
+  let head = sh.getRange(1, 1, 1, width).getValues()[0].map(String);
+  const missing = cols.filter(function (c) { return head.indexOf(c) < 0; });
+  if (missing.length) {
+    sh.getRange(1, head.filter(String).length + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
+    head = head.filter(String).concat(missing);
+  }
+  const idx = cols.map(function (c) { return head.indexOf(c); }), n = head.length;
+  const out = rows.map(function (r) { const o = new Array(n).fill(''); idx.forEach(function (j, i) { o[j] = r[i]; }); return o; });
+  sh.getRange(sh.getLastRow() + 1, 1, out.length, n).setValues(out);
 }
 function rows_(sh) {
   if (!sh || sh.getLastRow() < 2) return [];

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="css/forms.css?v=2.4">
+<link rel="stylesheet" href="css/forms.css?v=2.5">
 </head>
 <body>
 <main>
@@ -30,7 +30,7 @@
   <footer><a href="./#collection">Back to Pecan Pie</a> · <a href="guide.html">Tester guide</a></footer>
 </main>
 <script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/forms.js?v=2.4"></script>
+<script src="js/forms.js?v=2.5"></script>
 <script>
 (() => {
 'use strict';
@@ -65,6 +65,11 @@ const Q = [
   {id:'set_want', type:'scale', label:'How much did you want to complete the Harbor Lights set?', ends:['Didn’t care', 'Really wanted to'], required:true},
   {id:'tabs_clear', type:'choice', label:'Was the difference between the Set and My cards tabs clear?', options:['Yes', 'Mostly', 'No'], required:true},
   {id:'sealed_why', type:'checks', label:'If you kept any cards sealed, why?', hint:'Pick all that apply.', options:['I didn’t keep any sealed', 'To scratch later', 'To keep as a collectible', 'In case trading is added', 'I forgot about them'], required:true},
+  {section:'Bingo and dice'},
+  {id:'bingo_walk', type:'choice', label:'Did your bingo board ever change which spot you walked to?', options:['Never', 'Once or twice', 'Several times', 'Most days'], required:true},
+  {id:'bingo_want', type:'scale', label:'How much did you want to fill your bingo board?', ends:['Didn’t care', 'Really wanted to'], required:true},
+  {id:'dice_use', type:'choice', label:'Did you add dice before scratching?', options:['Never', 'Once or twice', 'Often', 'Every time I had one'], required:true},
+  {id:'dice_feel', type:'scale', label:'How much did dice add to the game?', ends:['Nothing', 'A lot'], required:true},
   {section:'Anything else'},
   {id:'favorite', type:'para', label:'What was your favorite moment?'},
   {id:'frustrating', type:'para', label:'What was most confusing or frustrating?'},

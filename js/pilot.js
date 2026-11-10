@@ -57,10 +57,10 @@ const RANK_WEIGHTS = [45, 28, 17, 8, 2];                        // Common to Myt
 const NODE_NAMES = ['Tidewater Post', 'Gull Rock', 'Lantern Steps', 'Rope Yard', 'Salt Gate', 'Breakwater Bench', 'Kelp Corner',
   'Pilot House', 'Harbor Clock', 'Net Loft', 'Bell Tower', 'Ferry Slip', 'Driftwood Arch', 'Signal Hill', 'Shell Walk', 'Mooring Post',
   'Old Customs', 'Fog Bell', 'Cannery Row', 'Pier Gate'];
-const P = Object.assign({vis:400, reach:75, acc:100, cool:4, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm'}, store.get('pilot', {}));
+const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:4, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm'}, store.get('pilot', {}));
 const saveP = () => store.set('pilot', P);
 
-const NODES_V = 3;                                              // bump to reseed everyone after a node-format change
+const NODES_V = 4;                                              // bump to reseed everyone after a node-format change
 let nodes = store.get('nodesV', 0) === NODES_V ? store.get('nodes', null) : null;
 let seedCenters = store.get('seedCenters', []);
 let collection = store.get('collection', []);
@@ -72,7 +72,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '2.4';
+const APP_V = '2.5';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -129,6 +129,229 @@ function updateOutboxNote(){
   const url = endpoint();
   el.textContent = !url ? 'No log endpoint: events stay on this phone.'
     : `${P.hook ? 'Custom endpoint' : 'Built-in endpoint'}. ${outbox.length ? outbox.length + ' event' + (outbox.length === 1 ? '' : 's') + ' waiting to send.' : 'Everything sent.'}`;
+}
+
+/* ================= Bingo ================= */
+/* One personal 5x5 board. Every copy carries a bingo ball on its border (any letter, number 1 to 30), so duplicates
+   can still fill squares. A copy daubs its square the moment it's collected, scratched or kept sealed. */
+const LETTERS = 'BINGO', BALL_MAX = 30;
+const rollBall = () => ({l:LETTERS[Math.floor(E.rng()*5)], n:1 + Math.floor(E.rng()*BALL_MAX)});
+const LINES = [];
+for (let r = 0; r < 5; r++) LINES.push([0, 1, 2, 3, 4].map(c => r*5 + c));
+for (let c = 0; c < 5; c++) LINES.push([0, 1, 2, 3, 4].map(r => r*5 + c));
+LINES.push([0, 6, 12, 18, 24], [4, 8, 12, 16, 20]);
+function newBoard(){
+  const cells = new Array(25);
+  for (let c = 0; c < 5; c++){
+    const nums = new Set(); while (nums.size < 5) nums.add(1 + Math.floor(E.rng()*BALL_MAX));
+    [...nums].sort((a, b) => a - b).forEach((n, r) => { cells[r*5 + c] = {l:LETTERS[c], n, by:null}; });
+  }
+  cells[12] = {l:'N', n:0, by:'free'};
+  return {id:'b' + Date.now().toString(36), at:new Date().toISOString(), cells, lines:[], done:false};
+}
+let board = store.get('bingo', null);
+if (!board || !Array.isArray(board.cells) || board.cells.length !== 25){ board = newBoard(); store.set('bingo', board); }
+let badges = store.get('badges', []);
+const openCell = b => !b || board.done ? -1 : board.cells.findIndex(x => !x.by && x.l === b.l && x.n === b.n);
+const numberOpen = b => !!b && !board.done && board.cells.some(x => !x.by && x.n === b.n);
+// A spot's ball is fixed until its card is taken, so walking closer never changes it.
+function ballFor(n){
+  const p = pending['node:' + n.id];
+  if (p && p.ball) return p.ball;
+  if (!n.ball){ n.ball = rollBall(); store.set('nodes', nodes); }
+  return n.ball;
+}
+const LINE_DIE = k => k === 1 ? 2 : k === 2 ? 3 : 4;     // first line Uncommon, second Rare, then Legendary
+const ordinal = k => ['First', 'Second', 'Third', 'Fourth', 'Fifth'][k - 1] || `Line ${k}:`;
+function addBadge(id, name){ if (badges.some(b => b.id === id)) return; badges.push({id, name, at:new Date().toISOString()}); store.set('badges', badges); }
+// Returns notices to show the player. Test cards never count.
+function daub(inst){
+  if (!inst || !inst.ball || inst.bingo || inst.source === 'debug') return [];
+  const i = openCell(inst.ball); if (i < 0) return [];
+  const cell = board.cells[i], notes = [`${cell.l}·${cell.n} daubed on your bingo board.`];
+  cell.by = inst.id; cell.at = new Date().toISOString(); inst.bingo = board.id + ':' + i;
+  if (!inst.debugFill) store.set('collection', collection);
+  const filled = board.cells.filter(c => c.by).length - 1;
+  event('bingo_daub', {square:cell.l + cell.n, cell:i, instId:inst.id, card:inst.cardId || '', filled, board:board.id});
+  LINES.forEach((ln, li) => {
+    if (board.lines.includes(li) || !ln.every(j => board.cells[j].by)) return;
+    board.lines.push(li);
+    const k = board.lines.length, rank = LINE_DIE(k);
+    grantDie(rank, 'bingo_line');
+    addBadge(board.id + ':line' + k, k <= 5 ? `${ordinal(k)} line` : `${k} lines`);
+    notes.push(`Bingo! ${ordinal(k)} line complete. You earned ${article(E.RANKS[rank - 1])} ${E.RANKS[rank - 1]} die (${E.dieName(rank)}).`);
+    event('bingo_line', {n:k, line:li, dieRank:rank, board:board.id});
+  });
+  if (!board.done && board.cells.every(c => c.by)){
+    board.done = true;
+    grantDie(5, 'blackout'); addBadge(board.id + ':blackout', 'Blackout');
+    notes.push('Blackout! Every square is filled. You earned a Mythic die (3d8) and the Blackout badge.');
+    event('bingo_blackout', {board:board.id, days:+((Date.now() - new Date(board.at).getTime())/864e5).toFixed(2)});
+  }
+  store.set('bingo', board);
+  return notes;
+}
+
+/* ================= Dice ================= */
+/* Stat-Mod Dice: committed before a scratch, rolled at the reveal, the total added to all four stats.
+   Found dice come from bingo lines and dice caches on the map. The basic Common die recharges with Distance. */
+let dice = store.get('dice', []);
+const DIE_ODDS = [60, 30, 8, 2, 0];                       // dice caches: mostly Common and Uncommon
+const DIST_CHARGE = 1000, DIST_CAP = 3000, IDLE_RATE = DIST_CHARGE/7200;   // 1 km walked, or 2 h with the app open; 3 charges a day
+let basic = Object.assign({pts:0, ready:false, day:'', today:0, walkM:0, idleS:0, anchor:null, lastMoveT:0}, store.get('basicDie', {}));
+const saveBasic = () => store.set('basicDie', basic);
+function grantDie(rank, from){
+  dice.push({id:'d' + Date.now().toString(36) + Math.floor(E.rng()*1e4).toString(36), rank, from, at:new Date().toISOString()});
+  store.set('dice', dice); event('die_earned', {rank, from, held:dice.length});
+  updateDiceChip();
+}
+function pickupDie(n){
+  let r = E.rng()*100, rank = 1;
+  for (let i = 0; i < DIE_ODDS.length; i++){ if (r < DIE_ODDS[i]){ rank = i + 1; break; } r -= DIE_ODDS[i]; }
+  grantDie(rank, 'cache');
+  n.coolUntil = Date.now() + P.dieCool*3600e3; store.set('nodes', nodes);
+  event('die_pickup', {node:n.id, rank, src:n.src});
+  closeSheet(); refreshNodes();
+  toast([`You found ${article(E.RANKS[rank - 1])} ${E.RANKS[rank - 1]} die (${E.dieName(rank)}). Add it before your next scratch.`]);
+}
+// Distance: walking while moving, idle time while not, never both, under one daily cap (see the doc's Distance economy).
+function addDistance(pts, mode){
+  const day = localDay(new Date());
+  if (basic.day !== day){ basic.day = day; basic.today = 0; basic.walkM = 0; basic.idleS = 0; }
+  if (basic.ready || pts <= 0) return;
+  const add = Math.min(pts, DIST_CAP - basic.today); if (add <= 0) return;
+  basic.pts += add; basic.today += add;
+  if (mode === 'walk') basic.walkM += add; else basic.idleS += add/IDLE_RATE;
+  if (basic.pts >= DIST_CHARGE){
+    basic.pts = 0; basic.ready = true;
+    event('basic_die_charged', {mode, todayPts:Math.round(basic.today), walkM:Math.round(basic.walkM), idleS:Math.round(basic.idleS)});
+    toast(['Your basic die is charged. Add it before a scratch for +1 to +4 on every stat.']);
+  }
+  saveBasic(); updateDiceChip();
+}
+function trackMove(lat, lng, acc){
+  if (acc > 35) return;                                   // too rough to tell a step from drift
+  const now = Date.now(), a = basic.anchor;
+  if (!a){ basic.anchor = {lat, lng, t:now}; return; }
+  const d = dist(a, {lat, lng}), dt = Math.max(1, (now - a.t)/1000);
+  if (d < Math.max(12, acc*.8)) return;                   // jitter: keep the anchor
+  basic.anchor = {lat, lng, t:now};
+  if (d/dt > 3) return;                                   // faster than a brisk walk: a car, a bus, or a GPS jump
+  basic.lastMoveT = now;
+  addDistance(d, 'walk');
+}
+setInterval(() => {
+  if (document.visibilityState === 'visible' && Date.now() - basic.lastMoveT > 60000) addDistance(10*IDLE_RATE, 'idle');
+}, 10000);
+function updateDiceChip(){
+  const el = $('diceChip'); if (!el) return;
+  const pct = Math.floor(basic.pts/DIST_CHARGE*100);
+  const txt = (basic.ready ? 'Basic die ready' : `Basic die ${pct}%`) + (dice.length ? ` · ${dice.length} found` : '');
+  if (el.dataset.t !== txt){ el.dataset.t = txt; el.innerHTML = `<span class="chip-die" aria-hidden="true"></span>${txt}`; el.classList.toggle('ready', basic.ready || dice.length > 0); }
+}
+
+/* ---------- Committing a die before a scratch ---------- */
+let heldNotes = [];
+// Dice show rank the way cards do: four round pips and a diamond for Mythic, never a color.
+const miniPips = r => `<span class="mini-pips" role="img" aria-label="Rank ${r}">${[1, 2, 3, 4].map(i => `<i class="${r >= i ? 'on' : ''}"></i>`).join('')}<i class="dia${r >= 5 ? ' on' : ''}"></i></span>`;
+const dieChoices = () => {
+  const out = [];
+  if (basic.ready) out.push({key:'basic', rank:1, src:'basic', label:'Basic die', sub:'Common · d4 · recharges with Distance'});
+  for (let r = 5; r >= 1; r--){ const n = dice.filter(d => d.rank === r).length; if (n) out.push({key:'r' + r, rank:r, src:'found', label:`${E.RANKS[r - 1]} die`, sub:`${E.dieName(r)} · +${E.DICE[r][0]} to +${E.DICE[r][0]*E.DICE[r][1]} · you have ${n}`}); }
+  return out;
+};
+function currentCommit(){
+  if (!current) return null;
+  const pk = pendKey(current);
+  return pk ? (pending[pk] && pending[pk].die) || null : current.dieCommit || null;
+}
+function updateDieBtn(){
+  const btn = $('scratchDie'); if (!btn || !current) return;
+  const c = currentCommit(), canChange = !E.started && !E.revealed;
+  btn.hidden = E.revealed || (!c && (!canChange || !dieChoices().length));
+  btn.disabled = !canChange;
+  btn.classList.toggle('on', !!c);
+  btn.innerHTML = `<span class="chip-die" aria-hidden="true"></span>` + (c ? `${E.RANKS[c.rank - 1]} die in play` : 'Add a die');
+}
+function releaseDie(c){
+  if (!c) return;
+  if (c.src === 'basic'){ basic.ready = true; saveBasic(); }
+  else dice.push({id:c.id, rank:c.rank, from:c.from || 'returned', at:c.at || new Date().toISOString()});
+  store.set('dice', dice); updateDiceChip();
+}
+function commitDie(choice){
+  if (!current || E.started || E.revealed) return;
+  const pk = pendKey(current), prev = currentCommit();
+  releaseDie(prev);
+  let c = null;
+  if (choice && choice.src === 'basic'){ basic.ready = false; basic.pts = 0; saveBasic(); c = {rank:1, src:'basic'}; }
+  else if (choice){ const i = dice.findIndex(d => d.rank === choice.rank); if (i >= 0){ const d = dice.splice(i, 1)[0]; c = {rank:d.rank, src:'found', id:d.id, from:d.from, at:d.at}; } }
+  store.set('dice', dice);
+  if (pk && pending[pk]){ pending[pk].die = c; store.set('pending', pending); } else current.dieCommit = c;
+  E.state.ctx.die = c ? c.rank : null;
+  event(c ? 'die_commit' : 'die_uncommit', {rank:c ? c.rank : prev && prev.rank, src:c ? c.src : prev && prev.src, source:current.source, card:E.state.card && E.state.card.id});
+  updateDieBtn(); updateDiceChip(); closeDiePick();
+}
+function openDiePick(){
+  const list = $('diePickList'), choices = dieChoices(), c = currentCommit();
+  list.innerHTML = choices.map((d, i) => `<button class="die-opt" type="button" data-i="${i}"><span class="die-ico r${d.rank}" aria-hidden="true"></span><span><b>${d.label}${miniPips(d.rank)}</b><small>${d.sub}</small></span></button>`).join('')
+    + (c ? '<button class="die-opt none" type="button" data-i="-1"><span><b>No die</b><small>Put the die back for later</small></span></button>' : '');
+  list._choices = choices;
+  $('diePick').hidden = false;
+}
+function closeDiePick(){ const el = $('diePick'); if (el) el.hidden = true; }
+$('scratchDie').addEventListener('click', () => { if ($('diePick').hidden) openDiePick(); else closeDiePick(); });
+$('diePickClose').addEventListener('click', closeDiePick);
+$('diePickList').addEventListener('click', e => {
+  const b = e.target.closest('.die-opt'); if (!b) return;
+  const i = +b.dataset.i; commitDie(i < 0 ? null : $('diePickList')._choices[i]);
+});
+
+/* ---------- Notices ---------- */
+let toastQ = [], toastBusy = false;
+function toast(lines){
+  lines = (lines || []).filter(Boolean); if (!lines.length) return;
+  toastQ = toastQ.concat(lines); if (!toastBusy) nextToast();
+}
+function nextToast(){
+  const el = $('toast'), t = toastQ.shift();
+  if (!t){ toastBusy = false; el.hidden = true; return; }
+  toastBusy = true; el.textContent = t; el.hidden = false; el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
+  if (/^(Bingo|Blackout)/.test(t)){ try{ E.Sound.reveal(4, false); }catch{} try{ navigator.vibrate && navigator.vibrate([20, 40, 20]); }catch{} }
+  setTimeout(nextToast, Math.min(6500, 2600 + t.length*35));
+}
+$('toast').addEventListener('click', () => nextToast());
+
+/* ---------- Bingo tab ---------- */
+function bingoMarkup(){
+  const filled = board.cells.filter(c => c.by).length - 1, k = board.lines.length;
+  const head = LETTERS.split('').map(l => `<div class="bhead" style="--bc:${E.BALL_COL[l]}">${l}</div>`).join('');
+  const cells = board.cells.map((c, i) => {
+    if (c.by === 'free') return `<div class="bcell free"><span>★</span><small>Free</small></div>`;
+    if (c.by) return `<button class="bcell daubed" type="button" data-cell="${i}" style="--bc:${E.BALL_COL[c.l]}" aria-label="${c.l} ${c.n}, daubed"><span>${c.n}</span></button>`;
+    return `<div class="bcell" aria-label="${c.l} ${c.n}, open"><span>${c.n}</span></div>`;
+  }).join('');
+  const lineNote = board.done ? 'Blackout! Every square is filled.'
+    : `${k ? `${k} line${k > 1 ? 's' : ''} so far. ` : ''}Your next line earns ${article(E.RANKS[LINE_DIE(k + 1) - 1])} ${E.RANKS[LINE_DIE(k + 1) - 1]} die. A full board earns a Mythic die.`;
+  const pct = Math.floor(basic.pts/DIST_CHARGE*100), left = DIST_CHARGE - basic.pts, capped = basic.today >= DIST_CAP && !basic.ready;
+  const basicLine = basic.ready ? 'Charged. Add it before a scratch.'
+    : capped ? 'You’ve earned today’s 3 charges. It starts charging again tomorrow.'
+    : `${pct}% charged. About ${fmtDist(left)} more walking, or ${Math.ceil(left/IDLE_RATE/60)} min with the app open.`;
+  const byRank = [5, 4, 3, 2, 1].map(r => ({r, n:dice.filter(d => d.rank === r).length})).filter(x => x.n);
+  return `<section class="bingo">
+    <div class="bboard" role="grid" aria-label="Bingo board, ${filled} of 24 filled">${head}${cells}</div>
+    <p class="bnote">${lineNote}</p>
+    <p class="group-note">Every card has a bingo ball on its border. When you collect a card whose ball matches an open square, it's daubed automatically. On the map, nearby spots show their ball: a gold ring means that number is open on your board, and a pulsing star up close means the exact square is.</p>
+    ${board.done ? '<button class="btn primary wide" id="newBoard" type="button">Start a new board</button>' : ''}
+    ${badges.length ? `<h2 class="group-head">Badges <span>${badges.length}</span></h2><div class="badges">${badges.map(b => `<span class="badge${/Blackout/.test(b.name) ? ' gold' : ''}">${E.esc(b.name)}</span>`).join('')}</div>` : ''}
+    <h2 class="group-head">Dice</h2>
+    <div class="dice-panel">
+      <div class="drow"><span class="die-ico r1" aria-hidden="true"></span><div><b>Basic die</b>${miniPips(1)} <small>Common · d4</small><div class="meter-bar"><i style="width:${basic.ready ? 100 : pct}%"></i></div><small>${basicLine}</small></div></div>
+      ${byRank.length ? byRank.map(x => `<div class="drow"><span class="die-ico r${x.r}" aria-hidden="true"></span><div><b>${E.RANKS[x.r - 1]} die ×${x.n}</b>${miniPips(x.r)} <small>${E.dieName(x.r)} · +${E.DICE[x.r][0]} to +${E.DICE[x.r][0]*E.DICE[x.r][1]}</small></div></div>`).join('')
+        : '<p class="group-note">No found dice yet. Complete a bingo line, or walk to a dice cache on the map.</p>'}
+      <p class="group-note">Before you scratch, tap <b>Add a die</b>. Its roll is added to all four stats when the card resolves, which can push a stat past its ceiling (shown in gold).</p>
+    </div>
+  </section>`;
 }
 
 /* ================= Geometry ================= */
@@ -204,6 +427,7 @@ function setPosition(lat, lng, acc){
   } else if (follow) map.panTo(ll, {animate:true, duration:.5});
   if (hadFix && !seeding && seedCenters.length && seedCenters.every(c => dist(c, me) > 500) && Date.now() - lastSeedTry > 30000) seedArea(me, false);
   if (P.mock === 'on') store.set('mockPos', me);
+  trackMove(lat, lng, acc);
   updateGps(); refreshNodes();
 }
 
@@ -499,10 +723,16 @@ async function seedArea(c, fresh){
     added = added.concat(randomNodes(c, (fresh ? 8 : 5) - added.length, nodes.concat(added)));
     if (P.nodeSource !== 'random') mapNote(area ? 'Few walkable places are mapped here, so some nodes are placed at random.' : 'Couldn’t reach map data, so nodes are placed at random for now.', 6000);
   }
+  // Dice caches: a few extra spots per area, placed by the same rules, that give a die instead of a card.
+  const dieWant = fresh ? 3 : 2;
+  let dieSpots = area ? pickWalkSpots(area, c, dieWant, 0, nodes.concat(added), R) : [];
+  if (dieSpots.length < dieWant) dieSpots = dieSpots.concat(randomNodes(c, dieWant - dieSpots.length, nodes.concat(added, dieSpots)));
+  dieSpots.forEach(d => { d.type = 'die'; d.id = 'd' + d.id; d.kind = 'Dice cache'; });
+  added = added.concat(dieSpots);
   nodes = nodes.concat(added); seedCenters.push({lat:c.lat, lng:c.lng});
   if (nodes.length > 150) nodes = nodes.slice(-150);
   store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('seedCenters', seedCenters);
-  event('nodes_seeded', {count:added.length, osm:added.filter(n => n.src === 'osm').length, walk:added.filter(n => n.src === 'walk').length, fresh});
+  event('nodes_seeded', {count:added.length, osm:added.filter(n => n.src === 'osm').length, walk:added.filter(n => n.src === 'walk').length, dice:dieSpots.length, fresh});
   seeding = false;
   refreshNodes();
 }
@@ -526,7 +756,8 @@ function refreshNodes(){
     const show = info.st !== 'hidden' && (info.st !== 'cooling' || info.d <= P.vis);
     if (!show){ if (m){ m.remove(); markers.delete(n.id); } continue; }
     const label = info.st === 'cooling' ? fmtLeft(info.left) : info.st === 'inrange' ? 'In reach' : fmtDist(info.d);
-    const key = info.st + '|' + label;
+    const look = markerLook(n, info);
+    const key = info.st + '|' + label + '|' + look.key;
     if (!m){
       m = L.marker([n.lat, n.lng], {keyboard:true, title:n.name});
       m.on('click', () => openSheet(n));
@@ -535,12 +766,24 @@ function refreshNodes(){
     if (m._key !== key){
       m._key = key;
       m.setIcon(L.divIcon({className:'', iconSize:[34, 44], iconAnchor:[17, 40],
-        html:`<div class="node ${info.st}"><div class="tok">HL</div><div class="t">${label}</div></div>`}));
+        html:`<div class="node ${info.st} ${look.cls}">${look.html}<div class="t">${label}</div></div>`}));
+      m.setZIndexOffset(look.z);
     }
-    if (info.st === 'inrange' && !wasInRange.has(n.id)){ wasInRange.add(n.id); event('node_in_range', {node:n.id, d:Math.round(info.d), acc:Math.round(meAcc)}); }
+    if (info.st === 'inrange' && !wasInRange.has(n.id)){ wasInRange.add(n.id); event('node_in_range', {node:n.id, type:n.type || 'card', d:Math.round(info.d), acc:Math.round(meAcc)}); }
     if (info.st !== 'inrange') wasInRange.delete(n.id);
   }
   if (sheetNode) updateSheet();
+}
+
+/* Three rings for card spots: far shows the card, the middle ring shows its bingo ball (highlighted when the number
+   is open somewhere on your board), and the near ring adds a stronger highlight when that exact square is open. */
+function markerLook(n, info){
+  if (n.type === 'die') return {key:'die', cls:'dienode', z:0, html:'<div class="dieico" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>'};
+  if (info.st === 'cooling' || info.d > P.ringMid) return {key:'far', cls:'', z:0, html:'<div class="tok">HL</div>'};
+  const b = ballFor(n), exact = openCell(b) >= 0, num = numberOpen(b), near = info.d <= P.ringNear;
+  const m = near && exact ? 'p2' : num ? 'p1' : 'dim';
+  return {key:m + b.l + b.n, cls:'ballnode ' + m, z:m === 'p2' ? 500 : m === 'p1' ? 200 : 0,
+    html:`<div class="ball" style="--bc:${E.BALL_COL[b.l]}"><div class="face"><i>${b.l}</i><span>${b.n}</span></div>${m === 'p2' ? '<b class="star">★</b>' : ''}</div>`};
 }
 
 /* Node sheet */
@@ -550,6 +793,15 @@ function closeSheet(){ sheetNode = null; $('nodeSheet').hidden = true; }
 function updateSheet(){
   const n = sheetNode, info = nodeInfo(n), btn = $('nsScratch');
   $('nsName').textContent = n.name;
+  if (n.type === 'die'){
+    let sub = 'Dice cache · ';
+    if (info.st === 'cooling') sub += `Restocking. Ready in ${fmtLeft(info.left)}.`;
+    else if (info.st === 'inrange') sub += 'You’re here. Pick up a die.';
+    else if (me && dist(me, n) <= P.reach && meAcc > P.acc) sub += `You’re close, but GPS is rough right now (±${Math.round(meAcc)} m).`;
+    else sub += `${fmtDist(info.d)} away. Walk within ${P.reach} m to pick up a die.`;
+    $('nsDist').textContent = sub; btn.disabled = info.st !== 'inrange'; btn.textContent = 'Pick up die';
+    return;
+  }
   let sub = (n.kind && n.kind !== n.name ? n.kind + ' · ' : '');
   if (info.st === 'cooling') sub += `Recharging. Ready in ${fmtLeft(info.left)}.`;
   else if (info.st === 'inrange') sub += 'You’re here. Scratch to pull a card.';
@@ -560,14 +812,19 @@ function updateSheet(){
   const started = pending['node:' + n.id] && pending['node:' + n.id].progress;
   btn.textContent = started ? 'Finish scratching' : 'Scratch';
   if (started && info.st !== 'cooling') $('nsDist').textContent = 'You started a card here. ' + sub;
+  if (info.st !== 'cooling' && info.d <= P.ringMid){
+    const b = ballFor(n), exact = openCell(b) >= 0, num = numberOpen(b);
+    $('nsDist').textContent += exact ? ` Its bingo ball, ${b.l}·${b.n}, is open on your board.` : num ? ` Its bingo ball is ${b.l}·${b.n}; ${b.n} is open in another column.` : ` Its bingo ball is ${b.l}·${b.n}.`;
+  }
 }
 $('nsClose').addEventListener('click', closeSheet);
 $('nsScratch').addEventListener('click', () => {
   const n = sheetNode; if (!n || nodeInfo(n).st !== 'inrange') return;
-  const m = markers.get(n.id), tok = m && m.getElement() ? m.getElement().querySelector('.tok') : null;
+  if (n.type === 'die') return pickupDie(n);
+  const m = markers.get(n.id), tok = m && m.getElement() ? m.getElement().querySelector('.tok, .ball') : null;
   closeSheet();
-  const key = 'node:' + n.id, card = pendingCard(key);
-  openScratch(card, {source:'node', node:n.id, label:n.name, provenance:n.prov || `First pulled at ${n.name}`}, tok, pending[key].progress);
+  const key = 'node:' + n.id, card = pendingCard(key, ballFor(n));
+  openScratch(card, {source:'node', node:n.id, label:n.name, provenance:n.prov || `First pulled at ${n.name}`, ball:pending[key].ball, die:pending[key].die ? pending[key].die.rank : null}, tok, pending[key].progress);
   event('node_scratch', {node:n.id, src:n.src, kind:n.kind});
 });
 
@@ -586,11 +843,11 @@ function drawCard(){
    when the player leaves, so backing out never re-rolls the card and coming back resumes the same scratch. */
 let pending = store.get('pending', {});
 const pendKey = ctx => ctx.source === 'node' ? 'node:' + ctx.node : ctx.source === 'daily' ? 'daily' : ctx.source === 'sealed' ? 'sealed:' + ctx.instId : null;
-function pendingCard(key){
+function pendingCard(key, ball){
   const p = pending[key], c = p && E.CARDS.find(c => c.id === p.cardId);
-  if (c) return c;
+  if (c){ if (!p.ball){ p.ball = ball || rollBall(); store.set('pending', pending); } return c; }
   const card = drawCard();
-  pending[key] = {cardId:card.id, at:Date.now()}; store.set('pending', pending);
+  pending[key] = {cardId:card.id, at:Date.now(), ball:ball || rollBall()}; store.set('pending', pending);
   return card;
 }
 function snapshotProgress(){
@@ -637,8 +894,10 @@ function openScratch(card, ctx, fromEl, progress){
   $('scratchWhere').textContent = ctx.label;
   $('scratchDone').hidden = true; $('scratchBack').hidden = false;
   $('scratchKeep').hidden = !(ctx.source === 'node' || ctx.source === 'daily') || !!progress;
-  $('vScratch').scrollTop = 0;
+  $('vScratch').scrollTop = 0; $('vScratch').scrollLeft = 0;
+  heldNotes = [];
   E.newCard(card, ctx);
+  updateDieBtn();
   if (progress) restoreProgress(progress);
   event('scratch_open', {source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank, resumed:!!progress});
   if (fromRect && fromRect.width) flyIn(fromRect, ctx.source === 'node');
@@ -684,6 +943,9 @@ function flyIn(from, gold){
 }
 function closeScratch(){
   const back = current && current.returnTo || 'vMap';
+  // A die committed to a test card (which has no saved state) goes back to the player if the card was never revealed.
+  if (current && !pendKey(current) && current.dieCommit && !E.revealed) releaseDie(current.dieCommit);
+  closeDiePick();
   app.classList.remove('scratching'); current = null;
   showView(back);
   setTimeout(maybeShowInstallTip, 600);
@@ -719,28 +981,33 @@ $('scratchKeep').addEventListener('click', () => {
   if (!current || E.started || E.revealed || !(current.source === 'node' || current.source === 'daily')) return;
   const ctx = current, card = E.state.card;
   const firstCopy = !realCards().some(c => c.cardId === card.id);
+  const pk = pendKey(ctx), pend = pk && pending[pk];
   const inst = {id:'c' + Date.now().toString(36) + Math.floor(E.rng()*1e4).toString(36), cardId:card.id, at:new Date().toISOString(),
-    source:ctx.source, node:ctx.node || null, provenance:ctx.provenance || '', sealed:true};
+    source:ctx.source, node:ctx.node || null, provenance:ctx.provenance || '', sealed:true, ball:ctx.ball || (pend && pend.ball) || rollBall()};
+  if (pend && pend.die) inst.dieCommit = pend.die;            // a committed die stays with the card until it's scratched
   collection.push(inst); store.set('collection', collection);
-  if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; store.set('nodes', nodes); } }
+  if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; delete n.ball; store.set('nodes', nodes); } }
   if (ctx.source === 'daily'){ daily.last = Date.now(); store.set('daily', daily); }
-  const pk = pendKey(ctx); if (pk && pending[pk]){ delete pending[pk]; store.set('pending', pending); }
-  event('card_kept_sealed', {instId:inst.id, source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank, newSlot:firstCopy});
+  if (pend){ delete pending[pk]; store.set('pending', pending); }
+  const notes = daub(inst);
+  event('card_kept_sealed', {instId:inst.id, source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank, newSlot:firstCopy, ball:inst.ball.l + inst.ball.n, daubed:!!inst.bingo, dieRank:inst.dieCommit ? inst.dieCommit.rank : undefined});
+  current.dieCommit = null;
   closeScratch(); updateChips();
-  mapNote(`Kept ${card.name} sealed. It's waiting in Collection, under My cards.`, 4000);
+  toast([`Kept ${card.name} sealed. It's waiting in Collection, under My cards.`].concat(notes));
 });
 // The seal breaks with the first stroke: hide Keep sealed, and remember it so the card shows as Started.
 $('stage').addEventListener('pointerdown', () => setTimeout(() => {
   if (!current || !E.started) return;
-  $('scratchKeep').hidden = true;
+  $('scratchKeep').hidden = true; updateDieBtn(); closeDiePick();
   if (current.source === 'sealed'){ const inst = collection.find(c => c.id === current.instId); if (inst && !inst.started){ inst.started = true; store.set('collection', collection); } }
 }, 60));
 function openSealed(inst, fromEl){
   const card = E.CARDS.find(c => c.id === inst.cardId); if (!card) return;
   const key = 'sealed:' + inst.id;
-  if (!pending[key]){ pending[key] = {cardId:card.id, at:Date.now()}; store.set('pending', pending); }
+  if (!pending[key]){ pending[key] = {cardId:card.id, at:Date.now(), ball:inst.ball, die:inst.dieCommit || null}; store.set('pending', pending); }
   event('sealed_open', {card:card.id, rank:card.rank, keptFrom:inst.source});
-  openScratch(card, {source:'sealed', instId:inst.id, label:card.name, provenance:inst.provenance, returnTo:'vCollection'}, fromEl, pending[key].progress);
+  openScratch(card, {source:'sealed', instId:inst.id, label:card.name, provenance:inst.provenance, returnTo:'vCollection', ball:inst.ball,
+    die:pending[key].die ? pending[key].die.rank : null}, fromEl, pending[key].progress);
 }
 
 window.Pilot = {
@@ -750,14 +1017,18 @@ window.Pilot = {
       const inst = collection.find(c => c.id === ctx.instId);
       if (inst){
         Object.assign(inst, {sealed:false, started:false, scratchedAt:new Date().toISOString(), grade:p.grade, sigmaW:row.sigmaW, isHolo:p.isHolo,
-          printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken, mask:pristine ? null : encodeMask()});
+          printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken, mask:pristine ? null : encodeMask(),
+          die:p.die ? {rank:p.die.rank, total:p.die.total} : null});
+        delete inst.dieCommit;
         if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
       }
       const pk = pendKey(ctx); if (pending[pk]){ delete pending[pk]; store.set('pending', pending); }
       event('scratch_reveal', {source:'sealed', instId:ctx.instId, keptFrom:inst ? inst.source : '', node:inst ? inst.node : null, card:card.id, rank:card.rank, grade:p.grade,
         computedGrade:row.computedGrade, sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken,
         durationMs:row.durationMs, strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:false,
-        heldMs:inst ? Date.now() - new Date(inst.at).getTime() : undefined});
+        heldMs:inst ? Date.now() - new Date(inst.at).getTime() : undefined, ball:inst && inst.ball ? inst.ball.l + inst.ball.n : '', daubed:false,
+        dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined});
+      if (current) current.dieCommit = null;
       updateChips();
       return;
     }
@@ -765,21 +1036,25 @@ window.Pilot = {
       id:'c' + Date.now().toString(36) + Math.floor(E.rng()*1e4).toString(36), cardId:card.id, at:new Date().toISOString(),
       source:ctx.source || 'debug', node:ctx.node || null, provenance:ctx.provenance || '',
       grade:p.grade, sigmaW:row.sigmaW, isHolo:p.isHolo, printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken,
-      mask:pristine ? null : encodeMask()
+      mask:pristine ? null : encodeMask(), ball:ctx.ball || null, die:p.die ? {rank:p.die.rank, total:p.die.total} : null
     };
     collection.push(inst);
+    heldNotes = heldNotes.concat(daub(inst));                 // shown once the reveal finishes, so nothing is spoiled
+    if (current) current.dieCommit = null;
     if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
-    if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; store.set('nodes', nodes); } }
+    if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; delete n.ball; store.set('nodes', nodes); } }
     if (ctx.source === 'daily'){ daily.last = Date.now(); store.set('daily', daily); }
     const pk = pendKey(ctx); if (pk && pending[pk]){ delete pending[pk]; store.set('pending', pending); }
     const place = ctx.source === 'node' && nodes ? nodes.find(n => n.id === ctx.node) : null;
     const lowPrint = !!(card.run && p.printNumber > 0 && p.printNumber <= Math.max(3, Math.ceil(card.run.size*.02)));
     event('scratch_reveal', {source:inst.source, node:inst.node, placeSrc:place ? place.src : '', placeKind:place ? place.kind : '', lowPrint, card:card.id, rank:card.rank, grade:p.grade, computedGrade:row.computedGrade,
       sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken, durationMs:row.durationMs,
-      strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:inst.source !== 'debug' && realCards().filter(c => c.cardId === card.id).length === 1});
+      strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:inst.source !== 'debug' && realCards().filter(c => c.cardId === card.id).length === 1,
+      ball:inst.ball ? inst.ball.l + inst.ball.n : '', daubed:!!inst.bingo, dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined});
     updateChips();
   },
-  onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; installTipEarned = true; askPersist(); }
+  onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; $('scratchDie').hidden = true; installTipEarned = true; askPersist();
+    if (heldNotes.length){ const n = heldNotes; heldNotes = []; setTimeout(() => toast(n), 500); } }
 };
 
 /* ================= Daily card ================= */
@@ -789,7 +1064,7 @@ $('dailyBtn').addEventListener('click', () => {
   if (!dailyReady()) return;
   event('daily_open');
   const card = pendingCard('daily');
-  openScratch(card, {source:'daily', label:'Daily card', provenance:'Daily card'}, $('dailyBtn'), pending.daily.progress);
+  openScratch(card, {source:'daily', label:'Daily card', provenance:'Daily card', ball:pending.daily.ball, die:pending.daily.die ? pending.daily.die.rank : null}, $('dailyBtn'), pending.daily.progress);
 });
 function updateChips(){
   const d = $('dailyBtn');
@@ -797,11 +1072,13 @@ function updateChips(){
   else { d.textContent = `Next daily in ${fmtLeft(daily.last + DAY - Date.now())}`; d.classList.remove('ready'); }
   const owned = new Set(realCards().map(c => c.cardId)).size;
   $('setChip').textContent = `Harbor Lights ${owned}/${E.CARDS.length}`;
+  updateDiceChip();
   const nSealed = realCards().filter(c => c.sealed).length, tab = document.querySelector('.tabs button[data-view="vCollection"]');
   // Only touch the tab when the count changes: rebuilding it every second could swallow a tap in progress.
   if (tab && tab.dataset.sealed !== String(nSealed)){ tab.dataset.sealed = String(nSealed); tab.innerHTML = 'Collection' + (nSealed ? `<span class="tab-badge" aria-label="${nSealed} sealed">${nSealed}</span>` : ''); }
 }
 $('setChip').addEventListener('click', () => showView('vCollection'));
+$('diceChip').addEventListener('click', () => { colMode = 'bingo'; showView('vCollection'); setSeg('bingo'); });
 
 /* ================= Static cards (collection and inspect) ================= */
 const GRADE_ORDER = {Pristine:0, Good:1, Fair:2, Poor:3};
@@ -827,7 +1104,7 @@ function cardMarkup(card, inst, idx){
   const date = inst ? new Date(inst.at).toLocaleDateString('en-US') : `No. ${card.no}`;
   const resid = shown && inst.mask ? `<canvas class="resid" data-i="${idx}"></canvas>` : '';
   return `<div class="card${shown && inst.isHolo ? ' holo' : ''}${inst && isTest(inst) ? ' test' : ''}">
-    <div class="topline"><span class="sig"><b>${card.sig[0]}·${card.sig[1]}</b><b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
+    <div class="topline${inst && inst.ball ? ' has-ball' : ''}"><span class="sig">${inst && inst.ball ? E.ballToken(inst.ball) : `<b>${card.sig[0]}·${card.sig[1]}</b>`}<b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
     <div class="banner"><span class="name">${esc(card.name)}</span><span class="ed">${ed}</span></div>
     <div class="art">${E.artSVG(card)}</div>
     ${E.pipRow(card.rank, shown ? `<span class="grade-badge shown g-${inst.grade}">${inst.grade}</span>` : '')}
@@ -838,6 +1115,7 @@ function cardMarkup(card, inst, idx){
         <div class="slot"><span class="lbl">Token</span><span class="val">${v.token}</span></div>
       </div>
       <div class="cf">${cf}</div>
+      ${shown && inst.die ? `<div class="die-chip landed r${inst.die.rank}">${E.dieChipHTML(inst.die, inst.die.total)}</div>` : ''}
       ${resid}
     </div>
     <div class="provenance"><span>${prov}</span><span>${date}</span></div>
@@ -872,6 +1150,8 @@ function tileCap(card, inst, right){
 const holoTag = inst => inst.isHolo ? '<span class="holo-tag">Holo</span>' : '';
 function renderCollection(){
   const grid = $('colGrid'), cards = E.CARDS.slice().sort((a, b) => a.no - b.no);
+  grid.classList.toggle('bingo-mode', colMode === 'bingo'); $('setFilterRow').hidden = colMode === 'bingo';
+  $('segBingo').textContent = `Bingo ${board.cells.filter(c => c.by).length - 1}/24`;
   const real = realCards(), tests = collection.filter(isTest);
   const owned = new Set(real.map(c => c.cardId)).size;
   $('segCat').textContent = `Set ${owned}/${cards.length}`;
@@ -880,6 +1160,13 @@ function renderCollection(){
   let html = '';
   const tile = (card, inst, right, label) => { const i = shown.push(inst) - 1;
     return `<button class="tile" type="button" data-i="${i}" aria-label="${E.esc(label)}">${cardMarkup(card, inst, i)}${tileCap(card, inst, right)}</button>`; };
+  if (colMode === 'bingo'){
+    $('segCat').textContent = `Set ${owned}/${cards.length}`; $('segAll').textContent = `My cards ${real.length}`;
+    grid.innerHTML = bingoMarkup();
+    event('view', {view:'bingo', filled:board.cells.filter(c => c.by).length - 1, lines:board.lines.length, dice:dice.length, basicReady:basic.ready});
+    $('testerCode').textContent = P.tester || testerId;
+    return;
+  }
   if (colMode === 'cat'){
     for (const card of cards){
       const mine = real.filter(c => c.cardId === card.id);
@@ -919,13 +1206,17 @@ function renderCollection(){
   $('testerCode').textContent = P.tester || testerId;
 }
 $('colGrid').addEventListener('click', e => {
+  const cell = e.target.closest('[data-cell]');
+  if (cell){ const inst = collection.find(c => c.id === board.cells[+cell.dataset.cell].by); if (inst){ if (inst.sealed) openSealed(inst, null); else openInspect(inst); } return; }
+  if (e.target.closest('#newBoard')){ board = newBoard(); store.set('bingo', board); event('bingo_new_board', {id:board.id}); renderCollection(); refreshNodes(); return; }
   const t = e.target.closest('button.tile'); if (!t) return;
   const inst = shown[+t.dataset.i];
   if (inst && inst.sealed) openSealed(inst, t.querySelector('.card')); else openInspect(inst);
 });
-function setSeg(mode){ colMode = mode; $('segCat').setAttribute('aria-selected', mode === 'cat'); $('segAll').setAttribute('aria-selected', mode === 'all'); renderCollection(); }
+function setSeg(mode){ colMode = mode; $('segCat').setAttribute('aria-selected', mode === 'cat'); $('segAll').setAttribute('aria-selected', mode === 'all'); $('segBingo').setAttribute('aria-selected', mode === 'bingo'); renderCollection(); }
 $('segCat').addEventListener('click', () => setSeg('cat'));
 $('segAll').addEventListener('click', () => setSeg('all'));
+$('segBingo').addEventListener('click', () => setSeg('bingo'));
 $('setFilter').addEventListener('change', renderCollection);
 
 /* ================= Inspect ================= */
@@ -942,7 +1233,8 @@ function openInspect(inst){
   $('inspSlab').innerHTML = `<div class="slab"><div class="slab-head"><div><div class="t">${E.esc(card.name)}</div><div class="s">Harbor Lights · Launch · ${E.RANKS[card.rank - 1]}</div></div>
     <div class="slab-grade"><div class="g g-${inst.grade}">${inst.grade}</div></div></div>
     <dl class="kv"><dt>Finish</dt><dd>${inst.isHolo ? 'Holo' : 'Normal'}</dd><dt>Print</dt><dd>${inst.printNumber > 0 ? inst.printNumber + ' / ' + card.run.size : 'Evergreen'}</dd>
-    <dt>Token</dt><dd>${inst.token}</dd>${cfRows}<dt>Pulled</dt><dd>${E.esc(inst.provenance || '')}, ${new Date(inst.at).toLocaleDateString('en-US')}</dd>${isTest(inst) ? '<dt>Status</dt><dd>Test card, not in your set</dd>' : ''}</dl></div>`;
+    <dt>Token</dt><dd>${inst.token}</dd>${inst.die ? `<dt>Die</dt><dd>${E.RANKS[inst.die.rank - 1]} ${E.dieName(inst.die.rank)}, +${inst.die.total} to every stat</dd>` : ''}${cfRows}
+    ${inst.ball ? `<dt>Bingo</dt><dd>${inst.ball.l}·${inst.ball.n}${inst.bingo ? ', daubed on your board' : ''}</dd>` : ''}<dt>Pulled</dt><dd>${E.esc(inst.provenance || '')}, ${new Date(inst.at).toLocaleDateString('en-US')}</dd>${isTest(inst) ? '<dt>Status</dt><dd>Test card, not in your set</dd>' : ''}</dl></div>`;
   const desc = $('inspCard').querySelector('.desc.has-resid');
   if (desc){
     let t = null;
@@ -991,6 +1283,8 @@ bindPRange('dVis', 'vis', v => v + ' m', refreshNodes);
 bindPRange('dReach', 'reach', v => v + ' m', () => { reachCircle.setRadius(P.reach); refreshNodes(); });
 bindPRange('dAcc', 'acc', v => '±' + v + ' m', () => { updateGps(); refreshNodes(); });
 bindPRange('dCool', 'cool', v => v ? v + ' h' : 'None', null);
+bindPRange('dRingMid', 'ringMid', v => v + ' m', refreshNodes);
+bindPRange('dRingNear', 'ringNear', v => v + ' m', refreshNodes);
 $('dMock').value = P.mock;
 $('dMock').addEventListener('change', () => {
   P.mock = $('dMock').value; saveP(); stopMock();
@@ -1002,7 +1296,7 @@ $('dWalk').addEventListener('change', () => { P.walk = $('dWalk').value; saveP()
 $('dReseed').addEventListener('click', () => { if (me){ seedArea(me, true); $('dNote').textContent = 'Reseeding nodes around you.'; } else $('dNote').textContent = 'No location yet.'; });
 $('dSource').value = P.nodeSource;
 $('dSource').addEventListener('change', () => { P.nodeSource = $('dSource').value; saveP(); $('dNote').textContent = 'Tap Reseed nodes around me to apply.'; });
-$('dReady').addEventListener('click', () => { if (nodes){ nodes.forEach(n => { n.coolUntil = 0; }); store.set('nodes', nodes); refreshNodes(); $('dNote').textContent = 'All nodes ready.'; } });
+$('dReady').addEventListener('click', () => { if (nodes){ nodes.forEach(n => { n.coolUntil = 0; delete n.ball; }); store.set('nodes', nodes); refreshNodes(); $('dNote').textContent = 'All nodes ready.'; } });
 $('dDaily').addEventListener('click', () => { daily.last = 0; store.set('daily', daily); updateChips(); $('dNote').textContent = 'Daily card is ready.'; });
 $('dTester').value = P.tester;
 $('dTester').placeholder = testerId;
@@ -1022,7 +1316,16 @@ $('dWipe').addEventListener('click', () => {
   collection = []; store.set('collection', collection); wipeArmed = false; $('dWipe').textContent = 'Erase collection';
   $('dNote').textContent = 'Collection erased.'; updateChips(); event('collection_erased');
 });
-$('newCard').addEventListener('click', () => openScratch(drawCard(), {source:'debug', label:'Test card', provenance:'Test card'}));
+$('newCard').addEventListener('click', () => openScratch(drawCard(), {source:'debug', label:'Test card', provenance:'Test card', ball:rollBall()}));
+$('dDice').addEventListener('click', () => { for (let r = 1; r <= 5; r++) grantDie(r, 'debug'); $('dNote').textContent = 'Added one die of each rank.'; });
+$('dCharge').addEventListener('click', () => { basic.ready = true; basic.pts = 0; saveBasic(); updateDiceChip(); $('dNote').textContent = 'Basic die charged.'; });
+$('dDaub').addEventListener('click', () => {
+  const open = board.cells.map((c, i) => c.by ? -1 : i).filter(i => i >= 0); if (!open.length) return;
+  const i = open[Math.floor(E.rng()*open.length)], c = board.cells[i];
+  toast(daub({id:'debug' + Date.now().toString(36), ball:{l:c.l, n:c.n}, source:'node', debugFill:true}));
+  $('dNote').textContent = `Filled ${c.l}·${c.n}.`;
+});
+$('dBoard').addEventListener('click', () => { board = newBoard(); store.set('bingo', board); refreshNodes(); $('dNote').textContent = 'New bingo board.'; });
 
 /* ================= Home-screen install ================= */
 // Offline shell: the service worker keeps the app's own files on the phone.
@@ -1077,9 +1380,15 @@ function askPersist(){
 if (standalone() || realCards().length) askPersist();
 // In another app's built-in browser, storage is separate and often cleared: say so plainly.
 if (IN_APP) setTimeout(() => mapNote('You’re in another app’s browser. Open Pecan Pie in your phone’s browser or from your home screen to keep your collection.', 10000), 1500);
+// Copies collected before bingo existed get a ball now, so they can count toward the board.
+(() => { let changed = false, notes = [];
+  for (const inst of collection){ if (!inst.ball && !isTest(inst)){ inst.ball = rollBall(); changed = true; notes = notes.concat(daub(inst)); } }
+  if (changed){ store.set('collection', collection); event('bingo_backfill', {cards:realCards().length, daubed:notes.length}); }
+})();
+updateDiceChip();
 updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
 setTimeout(maybeShowInstallTip, 4000);
-window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet};
 })();
