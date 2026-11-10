@@ -126,7 +126,14 @@ function useRaster(reason, detail){
 function useVector(){
   if (!window.maplibregl || !L.maplibreGL || !window.PECAN_MAPSTYLE || !hasWebGL()) return useRaster(hasWebGL() ? 'missing_library' : 'no_webgl');
   let ok = false;
-  baseLayer = L.maplibreGL({style:window.PECAN_MAPSTYLE, interactive:false}).addTo(map);
+  baseLayer = L.maplibreGL({style:window.PECAN_MAPSTYLE, interactive:false});
+  // Both tile sources (streets and labels) carry the same credit; list each credit once.
+  baseLayer.getAttribution = function(){
+    const m = this._glMap, st = m && m.getStyle();
+    if (!st || !st.sources) return '';
+    return [...new Set(Object.keys(st.sources).map(id => { const src = m.getSource(id); return src && typeof src.attribution === 'string' ? src.attribution.trim() : ''; }).filter(Boolean))].join(', ');
+  };
+  baseLayer.addTo(map);
   baseMode = 'vector';
   const gl = baseLayer.getMaplibreMap();
   // Working once the tile service has answered with its metadata; any error before that means it's unreachable.
