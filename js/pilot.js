@@ -72,7 +72,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '2.5';
+const APP_V = '2.6';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -258,12 +258,28 @@ function trackMove(lat, lng, acc){
 setInterval(() => {
   if (document.visibilityState === 'visible' && Date.now() - basic.lastMoveT > 60000) addDistance(10*IDLE_RATE, 'idle');
 }, 10000);
+// The basic die lives in a fixed button at the map's edge (screen furniture, not a pin): a gold ring fills as it
+// charges, the die tumbles a little whenever it gains a percent, and it bounces and glows once it's ready.
+let hudPct = null, hudReady = null;
 function updateDiceChip(){
-  const el = $('diceChip'); if (!el) return;
-  const pct = Math.floor(basic.pts/DIST_CHARGE*100);
-  const txt = (basic.ready ? 'Basic die ready' : `Basic die ${pct}%`) + (dice.length ? ` · ${dice.length} found` : '');
-  if (el.dataset.t !== txt){ el.dataset.t = txt; el.innerHTML = `<span class="chip-die" aria-hidden="true"></span>${txt}`; el.classList.toggle('ready', basic.ready || dice.length > 0); }
+  const el = $('dieHud'); if (!el) return;
+  const pct = basic.ready ? 100 : Math.floor(basic.pts/DIST_CHARGE*100);
+  el.style.setProperty('--p', pct);
+  el.classList.toggle('ready', basic.ready);
+  $('dieHudLabel').textContent = basic.ready ? 'Ready' : pct + '%';
+  const found = $('dieHudFound'); found.hidden = !dice.length; found.textContent = '+' + dice.length;
+  el.setAttribute('aria-label', `Your dice. Basic die ${basic.ready ? 'ready' : pct + '% charged'}${dice.length ? `, ${dice.length} found` : ''}`);
+  if (hudPct !== null && pct > hudPct && !basic.ready) bump(el, 'tumble', 650);
+  if (hudReady === false && basic.ready) bump(el, 'charged', 900);
+  hudPct = pct; hudReady = basic.ready;
+  if (!$('diceSheet').hidden) $('diceSheetBody').innerHTML = diceMarkup();
+  const seg = $('segDice'); if (seg) seg.textContent = `Dice ${dice.length + (basic.ready ? 1 : 0)}`;
 }
+function bump(el, cls, ms){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(() => el.classList.remove(cls), ms); }
+function openDiceSheet(){ closeSheet(); $('diceSheetBody').innerHTML = diceMarkup(); $('diceSheet').hidden = false; event('view', {view:'dice_sheet', dice:dice.length, basicReady:basic.ready}); }
+$('dieHud').addEventListener('click', () => { if ($('diceSheet').hidden) openDiceSheet(); else $('diceSheet').hidden = true; });
+$('diceSheetClose').addEventListener('click', () => { $('diceSheet').hidden = true; });
+$('diceSheetMore').addEventListener('click', () => { $('diceSheet').hidden = true; showView('vCollection'); setSeg('dice'); });
 
 /* ---------- Committing a die before a scratch ---------- */
 let heldNotes = [];
@@ -337,6 +353,22 @@ function nextToast(){
 }
 $('toast').addEventListener('click', () => nextToast());
 
+function diceMarkup(){
+  const pct = Math.floor(basic.pts/DIST_CHARGE*100), left = DIST_CHARGE - basic.pts, capped = basic.today >= DIST_CAP && !basic.ready;
+  const basicLine = basic.ready ? 'Charged. Add it before a scratch.'
+    : capped ? 'You’ve earned today’s 3 charges. It starts charging again tomorrow.'
+    : `${pct}% charged. About ${fmtDist(left)} more walking, or ${Math.ceil(left/IDLE_RATE/60)} min with the app open.`;
+  const byRank = [5, 4, 3, 2, 1].map(r => ({r, n:dice.filter(d => d.rank === r).length})).filter(x => x.n);
+  return `<section class="dice-home">
+    <div class="dice-panel">
+      <div class="drow"><span class="die-ico r1" aria-hidden="true"></span><div><b>Basic die</b>${miniPips(1)} <small>Common · d4</small><div class="meter-bar"><i style="width:${basic.ready ? 100 : pct}%"></i></div><small>${basicLine}</small></div></div>
+      ${byRank.length ? byRank.map(x => `<div class="drow"><span class="die-ico r${x.r}" aria-hidden="true"></span><div><b>${E.RANKS[x.r - 1]} die ×${x.n}</b>${miniPips(x.r)} <small>${E.dieName(x.r)} · +${E.DICE[x.r][0]} to +${E.DICE[x.r][0]*E.DICE[x.r][1]}</small></div></div>`).join('')
+        : '<p class="group-note">No found dice yet.</p>'}
+      <p class="group-note">Before you scratch, tap <b>Add a die</b>. Its roll is added to all four stats when the card resolves, which can push a stat past its ceiling (shown in gold).</p>
+      <p class="group-note">Find more at <b>dice caches</b> (the die pins on the map), and from your first bingo row, column and diagonal.</p>
+    </div>
+  </section>`;
+}
 /* ---------- Bingo tab ---------- */
 function bingoMarkup(){
   const filled = board.cells.filter(c => c.by).length - 1, k = board.lines.length, paid = paidKinds(), kindsLeft = KINDS.filter(x => !paid.includes(x));
@@ -351,11 +383,6 @@ function bingoMarkup(){
     : (kindsLeft.length ? `Your first ${kindsLeft.join(', ').replace(/, ([^,]*)$/, ' or $1')} earns ${article(nextRank)} ${nextRank} die. ` : 'You’ve earned a die for a row, a column and a diagonal. ')
       + 'A full board earns a Mythic die.';
   const rewards = KINDS.map(x => `<span class="reward${paid.includes(x) ? ' done' : ''}">${paid.includes(x) ? '✓ ' : ''}First ${x}</span>`).join('') + `<span class="reward${board.done ? ' done' : ''}">${board.done ? '✓ ' : ''}Full board</span>`;
-  const pct = Math.floor(basic.pts/DIST_CHARGE*100), left = DIST_CHARGE - basic.pts, capped = basic.today >= DIST_CAP && !basic.ready;
-  const basicLine = basic.ready ? 'Charged. Add it before a scratch.'
-    : capped ? 'You’ve earned today’s 3 charges. It starts charging again tomorrow.'
-    : `${pct}% charged. About ${fmtDist(left)} more walking, or ${Math.ceil(left/IDLE_RATE/60)} min with the app open.`;
-  const byRank = [5, 4, 3, 2, 1].map(r => ({r, n:dice.filter(d => d.rank === r).length})).filter(x => x.n);
   return `<section class="bingo">
     <div class="bboard" role="grid" aria-label="Bingo board, ${filled} of 24 filled">${head}${cells}</div>
     <div class="rewards">${rewards}</div>
@@ -363,13 +390,7 @@ function bingoMarkup(){
     <p class="group-note">Every card has a bingo ball on its border. When you collect a card whose ball matches an open square, it's daubed automatically. On the map, nearby spots show their ball: a gold ring means that number is open on your board, and a pulsing star up close means the exact square is.</p>
     ${board.done ? '<button class="btn primary wide" id="newBoard" type="button">Start a new board</button>' : ''}
     ${badges.length ? `<h2 class="group-head">Badges <span>${badges.length}</span></h2><div class="badges">${badges.map(b => `<span class="badge${/Blackout/.test(b.name) ? ' gold' : ''}">${E.esc(b.name)}</span>`).join('')}</div>` : ''}
-    <h2 class="group-head">Dice</h2>
-    <div class="dice-panel">
-      <div class="drow"><span class="die-ico r1" aria-hidden="true"></span><div><b>Basic die</b>${miniPips(1)} <small>Common · d4</small><div class="meter-bar"><i style="width:${basic.ready ? 100 : pct}%"></i></div><small>${basicLine}</small></div></div>
-      ${byRank.length ? byRank.map(x => `<div class="drow"><span class="die-ico r${x.r}" aria-hidden="true"></span><div><b>${E.RANKS[x.r - 1]} die ×${x.n}</b>${miniPips(x.r)} <small>${E.dieName(x.r)} · +${E.DICE[x.r][0]} to +${E.DICE[x.r][0]*E.DICE[x.r][1]}</small></div></div>`).join('')
-        : '<p class="group-note">No found dice yet. Complete a bingo line, or walk to a dice cache on the map.</p>'}
-      <p class="group-note">Before you scratch, tap <b>Add a die</b>. Its roll is added to all four stats when the card resolves, which can push a stat past its ceiling (shown in gold).</p>
-    </div>
+    <p class="group-note">Rewards are dice: see the <button class="linklike" type="button" data-seg="dice">Dice tab</button>.</p>
   </section>`;
 }
 
@@ -807,7 +828,7 @@ function markerLook(n, info){
 
 /* Node sheet */
 let sheetNode = null;
-function openSheet(n){ sheetNode = n; $('nodeSheet').hidden = false; updateSheet(); event('node_tap', {node:n.id}); }
+function openSheet(n){ sheetNode = n; $('diceSheet').hidden = true; $('nodeSheet').hidden = false; updateSheet(); event('node_tap', {node:n.id}); }
 function closeSheet(){ sheetNode = null; $('nodeSheet').hidden = true; }
 function updateSheet(){
   const n = sheetNode, info = nodeInfo(n), btn = $('nsScratch');
@@ -1097,7 +1118,6 @@ function updateChips(){
   if (tab && tab.dataset.sealed !== String(nSealed)){ tab.dataset.sealed = String(nSealed); tab.innerHTML = 'Collection' + (nSealed ? `<span class="tab-badge" aria-label="${nSealed} sealed">${nSealed}</span>` : ''); }
 }
 $('setChip').addEventListener('click', () => showView('vCollection'));
-$('diceChip').addEventListener('click', () => { colMode = 'bingo'; showView('vCollection'); setSeg('bingo'); });
 
 /* ================= Static cards (collection and inspect) ================= */
 const GRADE_ORDER = {Pristine:0, Good:1, Fair:2, Poor:3};
@@ -1169,18 +1189,25 @@ function tileCap(card, inst, right){
 const holoTag = inst => inst.isHolo ? '<span class="holo-tag">Holo</span>' : '';
 function renderCollection(){
   const grid = $('colGrid'), cards = E.CARDS.slice().sort((a, b) => a.no - b.no);
-  grid.classList.toggle('bingo-mode', colMode === 'bingo'); $('setFilterRow').hidden = colMode === 'bingo';
+  grid.classList.toggle('bingo-mode', colMode === 'bingo' || colMode === 'dice'); $('setFilterRow').hidden = colMode === 'bingo' || colMode === 'dice';
   $('segBingo').textContent = `Bingo ${board.cells.filter(c => c.by).length - 1}/24`;
   const real = realCards(), tests = collection.filter(isTest);
   const owned = new Set(real.map(c => c.cardId)).size;
   $('segCat').textContent = `Set ${owned}/${cards.length}`;
-  $('segAll').textContent = `My cards ${real.length}`;
+  $('segAll').textContent = `Cards ${real.length}`;
   shown = [];
   let html = '';
   const tile = (card, inst, right, label) => { const i = shown.push(inst) - 1;
     return `<button class="tile" type="button" data-i="${i}" aria-label="${E.esc(label)}">${cardMarkup(card, inst, i)}${tileCap(card, inst, right)}</button>`; };
+  if (colMode === 'dice'){
+    $('segCat').textContent = `Set ${owned}/${cards.length}`; $('segAll').textContent = `Cards ${real.length}`;
+    grid.innerHTML = diceMarkup(); updateDiceChip();
+    event('view', {view:'dice', dice:dice.length, basicReady:basic.ready});
+    $('testerCode').textContent = P.tester || testerId;
+    return;
+  }
   if (colMode === 'bingo'){
-    $('segCat').textContent = `Set ${owned}/${cards.length}`; $('segAll').textContent = `My cards ${real.length}`;
+    $('segCat').textContent = `Set ${owned}/${cards.length}`; $('segAll').textContent = `Cards ${real.length}`;
     grid.innerHTML = bingoMarkup();
     event('view', {view:'bingo', filled:board.cells.filter(c => c.by).length - 1, lines:board.lines.length, dice:dice.length, basicReady:basic.ready});
     $('testerCode').textContent = P.tester || testerId;
@@ -1227,15 +1254,17 @@ function renderCollection(){
 $('colGrid').addEventListener('click', e => {
   const cell = e.target.closest('[data-cell]');
   if (cell){ const inst = collection.find(c => c.id === board.cells[+cell.dataset.cell].by); if (inst){ if (inst.sealed) openSealed(inst, null); else openInspect(inst); } return; }
+  const sg = e.target.closest('[data-seg]'); if (sg){ setSeg(sg.dataset.seg); return; }
   if (e.target.closest('#newBoard')){ board = newBoard(); store.set('bingo', board); event('bingo_new_board', {id:board.id}); renderCollection(); refreshNodes(); return; }
   const t = e.target.closest('button.tile'); if (!t) return;
   const inst = shown[+t.dataset.i];
   if (inst && inst.sealed) openSealed(inst, t.querySelector('.card')); else openInspect(inst);
 });
-function setSeg(mode){ colMode = mode; $('segCat').setAttribute('aria-selected', mode === 'cat'); $('segAll').setAttribute('aria-selected', mode === 'all'); $('segBingo').setAttribute('aria-selected', mode === 'bingo'); renderCollection(); }
+function setSeg(mode){ colMode = mode; [['segCat', 'cat'], ['segAll', 'all'], ['segBingo', 'bingo'], ['segDice', 'dice']].forEach(([id, m]) => $(id).setAttribute('aria-selected', mode === m)); renderCollection(); }
 $('segCat').addEventListener('click', () => setSeg('cat'));
 $('segAll').addEventListener('click', () => setSeg('all'));
 $('segBingo').addEventListener('click', () => setSeg('bingo'));
+$('segDice').addEventListener('click', () => setSeg('dice'));
 $('setFilter').addEventListener('change', renderCollection);
 
 /* ================= Inspect ================= */
