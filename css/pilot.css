@@ -305,3 +305,7 @@ button.bcell { cursor: pointer; font: inherit; font-family: var(--font-display);
 .drow > div { flex: 1; min-width: 0; } .drow small { color: var(--muted); font-size: 13px; }
 .meter-bar { height: 8px; border-radius: 4px; background: var(--line); margin: 6px 0 4px; overflow: hidden; }
 .meter-bar i { display: block; height: 100%; background: #F2C230; border-radius: 4px; }
+
+.rewards { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.reward { font-size: 13px; font-weight: 700; padding: 5px 10px; border-radius: 14px; border: 1px dashed var(--line); color: var(--muted); }
+.reward.done { border: 1px solid #F2C230; color: #F2C230; }

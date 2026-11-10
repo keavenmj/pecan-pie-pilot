@@ -147,7 +147,7 @@ function newBoard(){
     [...nums].sort((a, b) => a - b).forEach((n, r) => { cells[r*5 + c] = {l:LETTERS[c], n, by:null}; });
   }
   cells[12] = {l:'N', n:0, by:'free'};
-  return {id:'b' + Date.now().toString(36), at:new Date().toISOString(), cells, lines:[], done:false};
+  return {id:'b' + Date.now().toString(36), at:new Date().toISOString(), cells, lines:[], paid:[], done:false};
 }
 let board = store.get('bingo', null);
 if (!board || !Array.isArray(board.cells) || board.cells.length !== 25){ board = newBoard(); store.set('bingo', board); }
@@ -161,8 +161,12 @@ function ballFor(n){
   if (!n.ball){ n.ball = rollBall(); store.set('nodes', nodes); }
   return n.ball;
 }
-const LINE_DIE = k => k === 1 ? 2 : k === 2 ? 3 : 4;     // first line Uncommon, second Rare, then Legendary
-const ordinal = k => ['First', 'Second', 'Third', 'Fourth', 'Fifth'][k - 1] || `Line ${k}:`;
+// Rewards pay once per direction: the first row, the first column and the first diagonal. Whichever is finished
+// first pays an Uncommon die, the second a Rare, the third a Legendary. Other lines pay nothing; a full board pays a Mythic.
+const KIND = li => li < 5 ? 'row' : li < 10 ? 'column' : 'diagonal';
+const KINDS = ['row', 'column', 'diagonal'];
+const PAID_DIE = k => [2, 3, 4][k - 1];
+const paidKinds = () => board.paid || (board.paid = [...new Set(board.lines.map(KIND))]);   // older boards: derive from lines done
 function addBadge(id, name){ if (badges.some(b => b.id === id)) return; badges.push({id, name, at:new Date().toISOString()}); store.set('badges', badges); }
 // Returns notices to show the player. Test cards never count.
 function daub(inst){
@@ -173,16 +177,27 @@ function daub(inst){
   if (!inst.debugFill) store.set('collection', collection);
   const filled = board.cells.filter(c => c.by).length - 1;
   event('bingo_daub', {square:cell.l + cell.n, cell:i, instId:inst.id, card:inst.cardId || '', filled, board:board.id});
+  const extra = [];
   LINES.forEach((ln, li) => {
     if (board.lines.includes(li) || !ln.every(j => board.cells[j].by)) return;
+    const kind = KIND(li), paid = paidKinds(), first = !paid.includes(kind);   // read before recording this line
     board.lines.push(li);
-    const k = board.lines.length, rank = LINE_DIE(k);
-    grantDie(rank, 'bingo_line');
-    addBadge(board.id + ':line' + k, k <= 5 ? `${ordinal(k)} line` : `${k} lines`);
-    notes.push(`Bingo! ${ordinal(k)} line complete. You earned ${article(E.RANKS[rank - 1])} ${E.RANKS[rank - 1]} die (${E.dieName(rank)}).`);
-    event('bingo_line', {n:k, line:li, dieRank:rank, board:board.id});
+    if (first){
+      paid.push(kind);
+      const rank = PAID_DIE(paid.length);
+      grantDie(rank, 'bingo_line');
+      addBadge(board.id + ':' + kind, `First ${kind}`);
+      notes.push(`Bingo! Your first ${kind}. You earned ${article(E.RANKS[rank - 1])} ${E.RANKS[rank - 1]} die (${E.dieName(rank)}).`);
+    } else extra.push(kind);
+    event('bingo_line', {n:board.lines.length, line:li, kind, paid:first, dieRank:first ? PAID_DIE(paidKinds().length) : undefined, board:board.id});
   });
-  if (!board.done && board.cells.every(c => c.by)){
+  // Lines in a direction that already paid get one combined notice, so a busy square doesn't stack up several.
+  const done = board.cells.every(c => c.by);
+  if (extra.length && !done){
+    const left = KINDS.filter(k => !paidKinds().includes(k));
+    notes.push((extra.length > 1 ? `${extra.length} more lines done.` : `Another ${extra[0]} done.`) + (left.length ? ` Your first ${left.join(' or ')} still pays a die.` : ' Fill the whole board for a Mythic die.'));
+  }
+  if (!board.done && done){
     board.done = true;
     grantDie(5, 'blackout'); addBadge(board.id + ':blackout', 'Blackout');
     notes.push('Blackout! Every square is filled. You earned a Mythic die (3d8) and the Blackout badge.');
@@ -324,15 +339,18 @@ $('toast').addEventListener('click', () => nextToast());
 
 /* ---------- Bingo tab ---------- */
 function bingoMarkup(){
-  const filled = board.cells.filter(c => c.by).length - 1, k = board.lines.length;
+  const filled = board.cells.filter(c => c.by).length - 1, k = board.lines.length, paid = paidKinds(), kindsLeft = KINDS.filter(x => !paid.includes(x));
   const head = LETTERS.split('').map(l => `<div class="bhead" style="--bc:${E.BALL_COL[l]}">${l}</div>`).join('');
   const cells = board.cells.map((c, i) => {
     if (c.by === 'free') return `<div class="bcell free"><span>★</span><small>Free</small></div>`;
     if (c.by) return `<button class="bcell daubed" type="button" data-cell="${i}" style="--bc:${E.BALL_COL[c.l]}" aria-label="${c.l} ${c.n}, daubed"><span>${c.n}</span></button>`;
     return `<div class="bcell" aria-label="${c.l} ${c.n}, open"><span>${c.n}</span></div>`;
   }).join('');
+  const nextRank = kindsLeft.length ? E.RANKS[PAID_DIE(paid.length + 1) - 1] : '';
   const lineNote = board.done ? 'Blackout! Every square is filled.'
-    : `${k ? `${k} line${k > 1 ? 's' : ''} so far. ` : ''}Your next line earns ${article(E.RANKS[LINE_DIE(k + 1) - 1])} ${E.RANKS[LINE_DIE(k + 1) - 1]} die. A full board earns a Mythic die.`;
+    : (kindsLeft.length ? `Your first ${kindsLeft.join(', ').replace(/, ([^,]*)$/, ' or $1')} earns ${article(nextRank)} ${nextRank} die. ` : 'You’ve earned a die for a row, a column and a diagonal. ')
+      + 'A full board earns a Mythic die.';
+  const rewards = KINDS.map(x => `<span class="reward${paid.includes(x) ? ' done' : ''}">${paid.includes(x) ? '✓ ' : ''}First ${x}</span>`).join('') + `<span class="reward${board.done ? ' done' : ''}">${board.done ? '✓ ' : ''}Full board</span>`;
   const pct = Math.floor(basic.pts/DIST_CHARGE*100), left = DIST_CHARGE - basic.pts, capped = basic.today >= DIST_CAP && !basic.ready;
   const basicLine = basic.ready ? 'Charged. Add it before a scratch.'
     : capped ? 'You’ve earned today’s 3 charges. It starts charging again tomorrow.'
@@ -340,6 +358,7 @@ function bingoMarkup(){
   const byRank = [5, 4, 3, 2, 1].map(r => ({r, n:dice.filter(d => d.rank === r).length})).filter(x => x.n);
   return `<section class="bingo">
     <div class="bboard" role="grid" aria-label="Bingo board, ${filled} of 24 filled">${head}${cells}</div>
+    <div class="rewards">${rewards}</div>
     <p class="bnote">${lineNote}</p>
     <p class="group-note">Every card has a bingo ball on its border. When you collect a card whose ball matches an open square, it's daubed automatically. On the map, nearby spots show their ball: a gold ring means that number is open on your board, and a pulsing star up close means the exact square is.</p>
     ${board.done ? '<button class="btn primary wide" id="newBoard" type="button">Start a new board</button>' : ''}
@@ -1390,5 +1409,5 @@ updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
 setTimeout(maybeShowInstallTip, 4000);
-window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub};
 })();
