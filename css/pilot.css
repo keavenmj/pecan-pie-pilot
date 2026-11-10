@@ -137,8 +137,10 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 /* Values panel framed in black, with the rank pips on a black tab rising from that frame. Both sit in the
    layer above the foil, so the rainbow runs around them and the cream pips always read against black. */
 .card .desc { box-shadow: 0 0 0 1.1cqw #0b0e12; }
-.card .pips { position: relative; z-index: 2; align-self: center; background: #0b0e12;
-  padding: 1.2cqw 3.2cqw 1.4cqw; margin: 0 0 -1.7cqw; border-radius: 2.4cqw 2.4cqw 0 0; }
+/* Full-width band: extends past the panel by the frame's thickness (1.1cqw) so its edges line up with the frame,
+   and its top corners follow the frame's outer radius (panel radius 1.8cqw + 1.1cqw). */
+.card .pips { position: relative; z-index: 2; align-self: stretch; background: #0b0e12;
+  padding: 1.2cqw 0 1.4cqw; margin: 0 -1.1cqw -1.7cqw; border-radius: 2.9cqw 2.9cqw 0 0; }
 
 /* ---------- Scratch transition: the token flies into the card ---------- */
 .flyer { position: fixed; z-index: 2000; pointer-events: none; transform-origin: 50% 50%; will-change: transform, opacity; }
