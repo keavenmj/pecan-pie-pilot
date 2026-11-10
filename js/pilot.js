@@ -109,9 +109,36 @@ function fmtLeft(ms){
 
 /* ================= Map ================= */
 const map = L.map('map', {zoomControl:false, attributionControl:true}).setView([DEFAULT_CENTER.lat, DEFAULT_CENTER.lng], 17);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-}).addTo(map);
+/* Base map: our dark vector style on OpenFreeMap tiles. If the phone has no WebGL, or the style
+   can't load within ten seconds, fall back to OpenStreetMap's raster tiles, darkened with CSS. */
+let baseLayer = null, baseMode = 'none';
+function hasWebGL(){ try{ const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); }catch{ return false; } }
+function useRaster(reason, detail){
+  if (baseMode === 'raster') return;
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  $('map').classList.add('raster-dark'); baseMode = 'raster';
+  if (reason) event('map_fallback', {reason, detail:String(detail || '').slice(0, 160)});
+  window.__mapFallback = {reason, detail:String(detail || '')};
+}
+function useVector(){
+  if (!window.maplibregl || !L.maplibreGL || !window.PECAN_MAPSTYLE || !hasWebGL()) return useRaster(hasWebGL() ? 'missing_library' : 'no_webgl');
+  let ok = false;
+  baseLayer = L.maplibreGL({style:window.PECAN_MAPSTYLE, interactive:false}).addTo(map);
+  baseMode = 'vector';
+  const gl = baseLayer.getMaplibreMap();
+  // Working once the tile service has answered with its metadata; any error before that means it's unreachable.
+  gl.on('sourcedata', e => { if (e.sourceId === 'omt' && e.sourceDataType === 'metadata') ok = true; });
+  gl.on('error', e => {
+    const msg = String((e && e.error && (e.error.message || e.error)) || 'unknown');
+    (window.__mapErrors = window.__mapErrors || []).push(msg.slice(0, 200));
+    if (!ok) useRaster('style_error', msg);
+  });
+  setTimeout(() => { if (!ok && baseMode === 'vector') useRaster('style_timeout'); }, 10000);
+}
+useVector();
 let me = null, meAcc = Infinity, hadFix = false, follow = true;
 const meMarker = L.marker([0, 0], {icon:L.divIcon({className:'', html:'<div class="me"></div>', iconSize:[18, 18], iconAnchor:[9, 9]}), interactive:false, keyboard:false, zIndexOffset:1000});
 const accCircle = L.circle([0, 0], {radius:1, color:'#2F7DE1', weight:1, fillOpacity:.1, interactive:false});
@@ -794,5 +821,5 @@ event('app_open', {cards:collection.length});
 updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
-window.__pilot = {get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView};
 })();

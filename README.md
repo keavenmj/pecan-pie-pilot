@@ -13,10 +13,12 @@ It's a static web app with no build step and no backend. Host the folder anywher
 - `apps-script/`: the Google Sheets log receiver and summary.
 - `css/engine.css`, `css/pilot.css`: styles.
 - `vendor/leaflet/`: Leaflet 1.9.4 (BSD-2-Clause, license included).
+- `vendor/maplibre/`: MapLibre GL JS 4.7.1 (BSD-3-Clause) and maplibre-gl-leaflet 0.1.4 (ISC), licenses included.
+- `js/mapstyle.js`: the dark map style.
 
 ## How it works
 
-- **Map:** OpenStreetMap tiles. The first good GPS fix places 15 nodes within about 650 m of the player, at least three within 200 m when the area allows. Walking 500 m from where nodes were last placed loads a new batch.
+- **Map:** an always-dark vector map (see Map below). The first good GPS fix places 15 nodes within about 650 m of the player, at least three within 200 m when the area allows. Walking 500 m from where nodes were last placed loads a new batch.
 - **Node placement:** one OpenStreetMap (Overpass) request per area. Nodes are kept at least 45 m apart.
   - **Public places come first:** public art, viewpoints, landmarks, historic sites, parks, gardens, fountains, libraries, museums, cafes, piers, lighthouses and similar. Anything private, plus memorials, graves, shrines, playgrounds, schools and places of worship, is skipped. Places within 6 m of a road centerline, such as art in a median, are skipped too.
   - **Walkable spots fill the gaps:** points along footpaths, trails, plazas and bike paths, never sidewalks, crosswalks, tunnels, or indoor or private paths. Each must be at least 15 m from roads and rail lines, at least 8 m from rivers and canals, and outside mapped lakes and ponds, with at most three per path.
@@ -47,6 +49,11 @@ Tap the title five times again to hide it.
   - `apps-script/` holds the receiver script and its setup steps.
 - **What's sent:** a random tester code (shown in Collection), the local date, and gameplay details. Never coordinates.
 
-## Tile usage
+## Map
 
-Map tiles come from tile.openstreetmap.org under the OpenStreetMap tile usage policy, which allows light use like a small pilot as long as the attribution stays visible. A larger rollout needs a commercial or self-hosted tile source.
+The base map is our own always-dark vector style (`js/mapstyle.js`), drawn with MapLibre GL (bundled in `vendor/maplibre/`, BSD-3-Clause) under Leaflet through the official `maplibre-gl-leaflet` bridge.
+
+- **Tiles:** free, keyless vector tiles from [OpenFreeMap](https://openfreemap.org) (OpenMapTiles schema). The public service is provided as-is, with no uptime guarantee.
+- **The look:** muted ground and roads, slightly brighter dashed footpaths, trails and plazas, small low-contrast labels, and no business icons.
+- **Labels can't blank the map:** labels read the tiles through a second source, so if fonts fail to load only the labels disappear.
+- **Fallback:** if the phone has no WebGL, or the style can't load within ten seconds, the map switches to OpenStreetMap's raster tiles, darkened with CSS, and logs a `map_fallback` event with the reason. Raster use follows the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/); a larger rollout needs a commercial or self-hosted tile source.

@@ -21,11 +21,12 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .app.scratching .tabs { display: none; }
 
 /* ---------- Map ---------- */
-#map { position: absolute; inset: 0; background: var(--bg); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.85) contrast(.9) saturate(.6); } }
-:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.85) contrast(.9) saturate(.6); }
+#map { position: absolute; inset: 0; background: #171b20; }
+/* The map is always dark. The raster fallback is darkened to match the vector style. */
+#map.raster-dark .leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.8) contrast(.9) saturate(.5); }
 .leaflet-container { font-family: var(--font-display); }
-.leaflet-control-attribution { font-size: 10px; }
+.leaflet-container .leaflet-control-attribution { font-size: 10px; background: rgba(23,27,32,.82); color: #8e98a3; }
+.leaflet-container .leaflet-control-attribution a { color: #b7c3cf; }
 .maptop { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
   z-index: 1000; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; pointer-events: none; }
 .maptop > * { pointer-events: auto; }
