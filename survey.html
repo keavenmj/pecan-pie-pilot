@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#171b20">
+<title>Pecan Pie Survey</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="css/forms.css?v=2.1">
+</head>
+<body>
+<main>
+  <header>
+    <img src="icons/apple-touch-icon.png" alt="" width="56" height="56">
+    <div>
+      <h1>End-of-week survey</h1>
+      <p class="sub">About 5 minutes. Your answers are saved on this phone as you go, so you can stop and come back.</p>
+    </div>
+  </header>
+  <div id="already" class="status ok" hidden>You've already sent this survey. Thanks! Sending it again updates your answers.</div>
+  <form id="survey" novalidate>
+    <div id="questions"></div>
+    <div id="status" class="status" hidden role="status"></div>
+    <button class="btn primary" id="send" type="submit">Send my answers</button>
+  </form>
+  <footer><a href="./">Back to Pecan Pie</a> · <a href="guide.html">Tester guide</a></footer>
+</main>
+<script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
+<script src="js/forms.js?v=2.1"></script>
+<script>
+(() => {
+'use strict';
+const F = window.PecanForms;
+const Q = [
+  {section:'About you'},
+  {id:'code', type:'text', label:'Your tester code', hint:'Filled in from this phone. It’s at the bottom of the Collection screen, like T-4KZ9.', required:true},
+  {id:'phone', type:'choice', label:'What phone did you play on?', options:['iPhone', 'Android', 'Other'], required:true},
+  {id:'installed', type:'choice', label:'Did you add Pecan Pie to your home screen?', options:['Yes', 'I tried, but it didn’t work', 'No'], required:true},
+  {section:'Overall'},
+  {id:'enjoy', type:'scale', label:'How much did you enjoy playing Pecan Pie?', ends:['Not at all', 'Loved it'], required:true},
+  {id:'keep_playing', type:'choice', label:'If Pecan Pie stayed available after this week, would you keep playing?', options:['Definitely not', 'Probably not', 'Not sure', 'Probably', 'Definitely'], required:true},
+  {id:'open_reasons', type:'checks', label:'What usually made you open the app?', hint:'Pick all that apply.', options:['My daily card', 'A spot was nearby', 'I wanted to finish the set', 'I was out walking anyway', 'Just curious', 'Other'], required:true},
+  {id:'blockers', type:'para', label:'On days you didn’t play, what got in the way?'},
+  {section:'Walking and the map'},
+  {id:'walked', type:'choice', label:'Did you ever walk somewhere specifically to reach a spot?', options:['Never', 'Once or twice', 'Several times', 'Most days'], required:true},
+  {id:'spots_sensible', type:'scale', label:'How sensible were the places spots appeared?', ends:['Often odd or unreachable', 'Always made sense'], required:true},
+  {id:'spots_unsafe', type:'para', label:'Was any spot somewhere unsafe, private, or impossible to reach? Where?'},
+  {section:'The scratch'},
+  {id:'scratch_satisfying', type:'scale', label:'How satisfying was scratching the panel?', ends:['Tedious', 'Very satisfying'], required:true},
+  {id:'reveal_feel', type:'choice', label:'The moment a card’s values appeared usually felt…', options:['Exciting', 'Pleasant', 'Flat', 'Slow or annoying'], required:true},
+  {id:'condition_notice', type:'choice', label:'Did you notice each card’s condition (Pristine, Good, Fair, Poor)?', options:['Yes, and I cared about it', 'Yes, but I didn’t care', 'I didn’t notice it'], required:true},
+  {id:'scratch_care', type:'choice', label:'Did you ever scratch more slowly or carefully because you wanted a better condition?', options:['Never', 'Sometimes', 'Often', 'Every time'], required:true},
+  {id:'peek_found', type:'choice', label:'Did you find you could hold the panel to read through leftover scratch marks?', options:['Yes', 'No', 'I never had leftover marks'], required:true},
+  {id:'residue_bother', type:'scale', label:'Did leftover scratch marks on your cards bother you?', ends:['Not at all', 'A lot'], required:true},
+  {section:'What’s under the panel'},
+  {id:'holo_feel', type:'choice', label:'Did you pull a Holo card? How did it feel?', options:['I didn’t get one', 'It didn’t feel special', 'A little exciting', 'Very exciting'], required:true},
+  {id:'print_attention', type:'choice', label:'Did you pay attention to print numbers (like 47/500)?', options:['No', 'I noticed them', 'A low number felt special'], required:true},
+  {id:'stats_look', type:'choice', label:'Did you look at the four stats (Prob, Luck, Entr, Var)?', options:['Never', 'Glanced at them', 'Checked them often'], required:true},
+  {id:'gold_stat', type:'choice', label:'Did you notice a stat shown in gold (past its normal range)? How did it feel?', options:['Didn’t see one', 'Saw one, didn’t care', 'Liked it', 'Didn’t understand it'], required:true},
+  {section:'Collection'},
+  {id:'set_want', type:'scale', label:'How much did you want to complete the Harbor Lights set?', ends:['Didn’t care', 'Really wanted to'], required:true},
+  {id:'tabs_clear', type:'choice', label:'Was the difference between the Set and My cards tabs clear?', options:['Yes', 'Mostly', 'No'], required:true},
+  {id:'sealed_why', type:'checks', label:'If you kept any cards sealed, why?', hint:'Pick all that apply.', options:['I didn’t keep any sealed', 'To scratch later', 'To keep as a collectible', 'In case trading is added', 'I forgot about them'], required:true},
+  {section:'Anything else'},
+  {id:'favorite', type:'para', label:'What was your favorite moment?'},
+  {id:'frustrating', type:'para', label:'What was most confusing or frustrating?'},
+  {id:'other', type:'para', label:'Anything else you’d like to tell us?'}
+];
+const form = document.getElementById('survey'), status = document.getElementById('status'), btn = document.getElementById('send');
+const draft = F.ls.get('surveyDraft', {});
+if (!draft.code) draft.code = F.testerCode();
+if (!draft.phone && F.PLATFORM !== 'other') draft.phone = F.PLATFORM === 'iOS' ? 'iPhone' : 'Android';
+F.render(document.getElementById('questions'), Q, draft);
+if (F.ls.get('surveyDone', null)) document.getElementById('already').hidden = false;
+// Save a draft on every change so an interrupted tester loses nothing.
+form.addEventListener('input', () => F.ls.set('surveyDraft', F.collect(form, Q)));
+form.addEventListener('change', () => F.ls.set('surveyDraft', F.collect(form, Q)));
+const show = (cls, text) => { status.hidden = false; status.className = 'status ' + cls; status.textContent = text; };
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const answers = F.collect(form, Q), missing = F.validate(form, Q, answers);
+  if (missing){ show('err', 'A few questions still need an answer. They’re outlined in red.'); missing.scrollIntoView({behavior:'smooth', block:'center'}); return; }
+  if (!F.endpoint()){ show('err', 'This copy of the game isn’t connected to the results sheet yet. Your answers are saved on this phone; please tell the organizer.'); return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try{
+    await F.send('survey_response', answers.code, {answers});
+    F.ls.set('surveyDone', Date.now()); F.ls.del('surveyDraft');
+    form.querySelector('#questions').hidden = true; btn.hidden = true; document.getElementById('already').hidden = true;
+    show('ok', 'Sent. Thank you for testing Pecan Pie!');
+    window.scrollTo({top:0, behavior:'smooth'});
+  }catch{
+    show('err', 'Couldn’t send right now. Check your connection and try again. Your answers are saved on this phone.');
+    btn.disabled = false; btn.textContent = 'Send my answers';
+  }
+});
+})();
+</script>
+</body>
+</html>

@@ -1,9 +1,11 @@
 # Pilot log receiver (Google Sheets)
 
-`Code.gs` turns a Google Sheet into the pilot's log endpoint. The app sends events in small batches, and the script writes them to three tabs:
+`Code.gs` turns a Google Sheet into the pilot's log endpoint. The app sends events in small batches, and the script writes them to these tabs:
 
 - **Events:** every event, one row each, with any extra details as JSON in the last column.
 - **Scratches:** one row per card revealed, with grade, σ, holo, print number, ceiling breaks, scratch time, stroke speed, and where the card came from.
+- **Survey:** one row per end-of-week survey sent from `survey.html`, one column per question. Scales are numbers; pick-all answers are joined with semicolons. If a tester sends it twice, both rows are kept and the later one is their final answer.
+- **Problems:** one row per report sent from `report.html`: area, how much it got in the way, what happened, an optional contact, and diagnostics (game version, phone, storage size, unsent events, and the last 25 event names and times).
 - **Summary:** written by the script as plain numbers, not formulas. It refreshes on its own as events arrive (at most once every five minutes), hourly as a backup, and on demand from the **Pecan Pie** menu. It shows retention by day since first open, daily activity, cards per session, condition grades by rank, care by rank, card sources, and outlier counts. Test cards from the Debug tab are left out.
 
 ## Setup (about five minutes)
@@ -12,7 +14,7 @@
 2. Open **Extensions › Apps Script**. Delete the starter code, paste in all of `Code.gs`, and save.
 3. Choose `setup` in the function menu at the top and click **Run**.
    - Google asks you to authorize the script. Pick your account. On the "Google hasn't verified this app" screen, click **Advanced**, then **Go to (project name)**. This is your own script, so that's expected.
-   - `setup` creates the tabs and an hourly trigger for the summary.
+   - `setup` creates the tabs (Survey and Problems also appear on their own with the first response) and an hourly trigger for the summary.
 4. Click **Deploy › New deployment**. Choose the gear icon, then **Web app**, and set:
    - **Execute as:** Me
    - **Who has access:** Anyone
@@ -26,6 +28,6 @@ To check it's running, open the URL in a browser. It should say "Pecan Pie log r
 
 - **Summary shows zeroes:** it was written before any data arrived. Use **Pecan Pie › Refresh summary**; the menu appears after reloading the Sheet.
 - **Updating the script:** after editing `Code.gs`, use **Deploy › Manage deployments**, edit the existing deployment, and choose **New version**. Keep the same URL so the app doesn't need changing.
-- **Privacy:** events carry a random tester code (shown at the bottom of the Collection screen), the tester's local date, and gameplay details. No coordinates or personal information are sent.
+- **Privacy:** events carry a random tester code (shown at the bottom of the Collection screen), the tester's local date, and gameplay details. No coordinates are sent. The only personal information is a contact a tester chooses to type into a problem report.
 - **Abuse:** the endpoint is public, since the app is a public web page. The script caps payload size and batch length, drops repeated events, and stops text from being read as a spreadsheet formula. For a 20 to 30 person pilot that's enough. Anything larger should move to a real backend with authentication.
 - **Duplicates:** each event has an `id`, and repeats received within six hours are dropped. If one slips through anyway, remove duplicates by the `id` column.

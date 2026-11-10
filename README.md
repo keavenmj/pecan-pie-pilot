@@ -12,7 +12,9 @@ It's a static web app with no build step and no backend. Host the folder anywher
 - `js/config.js`: the log endpoint.
 - `apps-script/`: the Google Sheets log receiver and summary.
 - `guide.html`: the tester guide, linked from the Collection screen.
-- `tester-kit/survey.md`: the end-of-week survey, ready to paste into Google Forms, plus a message to send testers.
+- `survey.html`, `report.html`: the in-app end-of-week survey and problem report. Both send to the same Sheet (Survey and Problems tabs), fill in the tester code, and keep a draft on the phone until sent.
+- `js/forms.js`, `css/forms.css`: shared code and styles for those two pages.
+- `tester-kit/survey.md`: the survey questions with what each one answers, plus a message to send testers.
 - `css/engine.css`, `css/pilot.css`: styles.
 - `vendor/leaflet/`: Leaflet 1.9.4 (BSD-2-Clause, license included).
 - `vendor/maplibre/`: MapLibre GL JS 4.7.1 (BSD-3-Clause) and maplibre-gl-leaflet 0.1.4 (ISC), licenses included.

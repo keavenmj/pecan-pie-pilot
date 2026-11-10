@@ -1,8 +1,8 @@
 # Pecan Pie end-of-week survey
 
-Paste these into a Google Form, about ten minutes of setup. Each question notes the form question type and which item in the design doc's "What to measure" list it answers. The play logs already cover opens, scratches per session and retention, so the survey asks only what logs can't see: why people played, and how the reveal felt.
+The survey is built into the pilot at `survey.html` (linked from the tester guide and the bottom of the Collection screen). Answers go to the **Survey** tab of the pilot Sheet. This file is the reference copy: each question notes its type and which item in the design doc's "What to measure" list it answers. To change a question, edit the `Q` list in `survey.html` and the matching `SURVEY_QS` list in `apps-script/Code.gs`. The play logs already cover opens, scratches per session and retention, so the survey asks only what logs can't see: why people played, and how the reveal felt.
 
-**Form settings:** turn off "Collect email addresses" (the tester code links answers to logs), allow one response, and don't require sign-in. It takes about 5 minutes to answer.
+No email or sign-in is collected; the tester code links answers to logs and is filled in from the phone. It takes about 5 minutes to answer, and answers are saved on the phone as the tester goes.
 
 ---
 
@@ -94,15 +94,19 @@ Paste these into a Google Form, about ten minutes of setup. Each question notes 
 22. **Was the difference between the Set and My cards tabs clear?**
     *Multiple choice:* Yes / Mostly / No
 
+23. **If you kept any cards sealed, why?** Pick all that apply.
+    *Checkboxes:* I didn't keep any sealed / To scratch later / To keep as a collectible / In case trading is added / I forgot about them
+    *Answers:* whether the sealed card idea has pull on its own, ahead of trading.
+
 ## Anything else
 
-23. **What was your favorite moment?**
+24. **What was your favorite moment?**
     *Paragraph.*
 
-24. **What was most confusing or frustrating?**
+25. **What was most confusing or frustrating?**
     *Paragraph.*
 
-25. **Anything else you'd like to tell us?**
+26. **Anything else you'd like to tell us?**
     *Paragraph, optional.*
 
 ---
@@ -111,4 +115,6 @@ Paste these into a Google Form, about ten minutes of setup. Each question notes 
 
 > Thanks for testing Pecan Pie this week. Before you start, read the short guide, especially the first step about adding the game to your home screen: https://keavenmj.github.io/pecan-pie-pilot/guide.html
 >
-> Play however you naturally would. There's no target. At the end of the week we'll send a 5-minute survey. Your tester code is at the bottom of the Collection screen.
+> Play however you naturally would. There's no target. If something breaks, use "Report a problem" at the bottom of the Collection screen.
+>
+> At the end of the week, please fill in the 5-minute survey: https://keavenmj.github.io/pecan-pie-pilot/survey.html

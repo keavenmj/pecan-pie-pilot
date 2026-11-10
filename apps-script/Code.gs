@@ -9,6 +9,12 @@
 const EVENT_COLS = ['received_at', 'at', 'day', 'tester', 'session', 'type', 'id', 'app', 'platform', 'standalone', 'data'];
 const SCRATCH_COLS = ['received_at', 'at', 'day', 'tester', 'session', 'source', 'place_src', 'place_kind', 'card', 'rank', 'grade',
   'computed_grade', 'sigma_w', 'holo', 'print', 'low_print', 'broke', 'token', 'duration_ms', 'strokes', 'speed_px_s', 'coverage', 'new_slot', 'fx'];
+// Survey columns stay in this order so the tab reads like a form export. Answers to questions not listed here land in 'extra'.
+const SURVEY_QS = ['code', 'phone', 'installed', 'enjoy', 'keep_playing', 'open_reasons', 'blockers', 'walked', 'spots_sensible', 'spots_unsafe',
+  'scratch_satisfying', 'reveal_feel', 'condition_notice', 'scratch_care', 'peek_found', 'residue_bother', 'holo_feel', 'print_attention',
+  'stats_look', 'gold_stat', 'set_want', 'tabs_clear', 'sealed_why', 'favorite', 'frustrating', 'other'];
+const SURVEY_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone'].concat(SURVEY_QS, ['extra']);
+const PROBLEM_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone', 'area', 'severity', 'what', 'contact', 'diagnostics'];
 const META_KEYS = ['at', 'day', 'tester', 'session', 'type', 'id', 'app', 'platform', 'standalone'];
 const MAX_BODY = 300000, MAX_EVENTS = 200;
 const SUMMARY_EVERY_SEC = 300;   // refresh the Summary as events arrive, at most once every five minutes
@@ -36,7 +42,7 @@ function doPost(e) {
     lock.waitLock(20000);
     try {
       const ss = SpreadsheetApp.getActive(), now = new Date();
-      const evRows = [], scRows = [];
+      const evRows = [], scRows = [], svRows = [], prRows = [];
       evs.forEach(function (x) {
         const data = {};
         Object.keys(x).forEach(function (k) { if (META_KEYS.indexOf(k) < 0) data[k] = x[k]; });
@@ -47,9 +53,21 @@ function doPost(e) {
             str_(x.card), num_(x.rank), str_(x.grade), str_(x.computedGrade), num_(x.sigmaW), x.holo === true, num_(x.print), x.lowPrint === true,
             str_(x.broke), str_(x.token), num_(x.durationMs), num_(x.strokes), num_(x.speedPxS), num_(x.coverage), x.newSlot === true, str_(x.fx)]);
         }
+        if (x.type === 'survey_response') {
+          const a = (x.answers && typeof x.answers === 'object') ? x.answers : {}, extra = {};
+          Object.keys(a).forEach(function (k) { if (SURVEY_QS.indexOf(k) < 0) extra[k] = a[k]; });
+          svRows.push([now, date_(x.at), str_(x.tester), str_(x.app), str_(x.platform), x.standalone === true]
+            .concat(SURVEY_QS.map(function (k) { return answer_(a[k]); }), [Object.keys(extra).length ? str_(JSON.stringify(extra), 3000) : '']));
+        }
+        if (x.type === 'problem_report') {
+          prRows.push([now, date_(x.at), str_(x.tester), str_(x.app), str_(x.platform), x.standalone === true,
+            str_(x.area), str_(x.severity), str_(x.what, 3000), str_(x.contact), str_(JSON.stringify(x.diag || {}), 5000)]);
+        }
       });
       append_(sheet_(ss, 'Events', EVENT_COLS), evRows);
       append_(sheet_(ss, 'Scratches', SCRATCH_COLS), scRows);
+      if (svRows.length) append_(sheet_(ss, 'Survey', SURVEY_COLS), svRows);
+      if (prRows.length) append_(sheet_(ss, 'Problems', PROBLEM_COLS), prRows);
     } finally {
       lock.releaseLock();
     }
@@ -81,6 +99,8 @@ function setup() {
   const ss = SpreadsheetApp.getActive();
   sheet_(ss, 'Events', EVENT_COLS);
   sheet_(ss, 'Scratches', SCRATCH_COLS);
+  sheet_(ss, 'Survey', SURVEY_COLS);
+  sheet_(ss, 'Problems', PROBLEM_COLS);
   if (!ss.getSheetByName('Summary')) ss.insertSheet('Summary', 0);
   const has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'refreshSummary'; });
   if (!has) ScriptApp.newTrigger('refreshSummary').timeBased().everyHours(1).create();
@@ -101,7 +121,9 @@ function refreshSummary() {
 
 function buildSummary_() {
   const ss = SpreadsheetApp.getActive();
-  const ev = rows_(ss.getSheetByName('Events'));
+  const ev = rows_(ss.getSheetByName('Events')).filter(function (r) { return r.session !== 'form'; });   // survey and problem pages aren't play
+  const surveys = Math.max(0, (ss.getSheetByName('Survey') || {getLastRow: function () { return 1; }}).getLastRow() - 1);
+  const problems = Math.max(0, (ss.getSheetByName('Problems') || {getLastRow: function () { return 1; }}).getLastRow() - 1);
   const sc = rows_(ss.getSheetByName('Scratches')).filter(function (r) { return r.source !== 'debug'; });   // test cards don't count
   const sum = ss.getSheetByName('Summary') || ss.insertSheet('Summary', 0);
   sum.clear();
@@ -135,6 +157,8 @@ function buildSummary_() {
     ['Cards per session, median', median_(perSession)],
     ['Testers who peeked at least once', Object.keys(peekers).length + ' of ' + names.length],
     ['Peeks', peeks.length],
+    ['Survey responses (see Survey tab)', surveys],
+    ['Problem reports (see Problems tab)', problems],
     ['Updated', new Date()]
   ]]);
 
@@ -308,6 +332,13 @@ function str_(v, max) {
   let s = String(v).slice(0, max || 200);
   if (/^[=+\-@]/.test(s)) s = "'" + s;
   return s;
+}
+// Survey answers: lists are joined, numbers stay numbers so scales can be averaged, free text gets room.
+function answer_(v) {
+  if (Array.isArray(v)) return str_(v.map(String).join('; '), 1000);
+  if (typeof v === 'number') return num_(v);
+  if (/^[1-5]$/.test(String(v))) return Number(v);
+  return str_(v, 3000);
 }
 function num_(v) { const n = Number(v); return isFinite(n) ? n : ''; }
 function date_(s) { const d = new Date(s); return isNaN(d.getTime()) ? '' : d; }

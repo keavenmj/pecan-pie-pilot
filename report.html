@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#171b20">
+<title>Report a Problem</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="css/forms.css?v=2.1">
+</head>
+<body>
+<main>
+  <header>
+    <img src="icons/apple-touch-icon.png" alt="" width="56" height="56">
+    <div>
+      <h1>Report a problem</h1>
+      <p class="sub">Something broken, confusing, or in a bad spot? Tell us here. A few details about this phone and the game are attached so we can track it down.</p>
+    </div>
+  </header>
+  <form id="report" novalidate>
+    <div id="questions"></div>
+    <details class="q" id="diagBox">
+      <summary class="qt">What gets attached</summary>
+      <p class="hint">Your tester code, the game version, phone type, whether it's on your home screen, how much it has stored, and the names and times of your last few game events (like “scratch_reveal”). No location or coordinates.</p>
+      <pre class="mono" id="diagText"></pre>
+    </details>
+    <div id="status" class="status" hidden role="status"></div>
+    <button class="btn primary" id="send" type="submit">Send report</button>
+    <button class="btn" id="another" type="button" hidden>Report something else</button>
+  </form>
+  <footer><a href="./">Back to Pecan Pie</a> · <a href="guide.html">Tester guide</a></footer>
+</main>
+<script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
+<script src="js/forms.js?v=2.1"></script>
+<script>
+(() => {
+'use strict';
+const F = window.PecanForms;
+const Q = [
+  {id:'what', type:'para', label:'What happened?', hint:'What were you doing, and what did you expect instead? If it was a spot, describe where it was.', required:true},
+  {id:'area', type:'choice', label:'Where in the game?', options:['Map or spots', 'Scratching a card', 'Collection', 'Adding to home screen', 'Something else'], required:true},
+  {id:'severity', type:'choice', label:'How much did it get in the way?', options:['Just odd', 'Annoying, but I kept playing', 'I couldn’t keep playing'], required:true},
+  {id:'contact', type:'text', label:'How can we reach you about this? (optional)', hint:'Only if you’d like a reply. This is the one thing on this page that can identify you.'}
+];
+// Safe to send: event names and times, plus a reason when the map fell back. Never coordinates or place names.
+function diagnostics(){
+  let chars = 0;
+  try{ for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); chars += k.length + (localStorage.getItem(k) || '').length; } }catch{}
+  const recent = F.recent().slice(-25).map(e => {
+    const t = (e.at || '').slice(11, 19);
+    return e.type === 'map_fallback' ? `${t} map_fallback(${e.reason || ''})` : `${t} ${e.type}`;
+  });
+  return {
+    tester:F.testerCode() || '(none)', app:F.appVersion() || '(unknown)', platform:F.PLATFORM, standalone:F.standalone(),
+    screen:`${screen.width}x${screen.height} @${window.devicePixelRatio || 1}`, viewport:`${innerWidth}x${innerHeight}`,
+    ua:navigator.userAgent.slice(0, 200), localChars:chars,
+    cards:F.ls.get('collection', []).length, unsent:F.ls.get('outbox', []).length,
+    lastDay:recent.length ? (F.recent().slice(-1)[0].day || '') : '', recent
+  };
+}
+const form = document.getElementById('report'), status = document.getElementById('status'), btn = document.getElementById('send'), again = document.getElementById('another');
+const diag = diagnostics();
+document.getElementById('diagText').textContent = JSON.stringify(diag, null, 1);
+const draft = F.ls.get('reportDraft', {});
+F.render(document.getElementById('questions'), Q, draft);
+const save = () => F.ls.set('reportDraft', F.collect(form, Q));
+form.addEventListener('input', save);
+form.addEventListener('change', save);
+const show = (cls, text) => { status.hidden = false; status.className = 'status ' + cls; status.textContent = text; };
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const a = F.collect(form, Q), missing = F.validate(form, Q, a);
+  if (missing){ show('err', 'A couple of things still need an answer. They’re outlined in red.'); missing.scrollIntoView({behavior:'smooth', block:'center'}); return; }
+  if (!F.endpoint()){ show('err', 'This copy of the game isn’t connected to the results sheet yet. Your report is saved on this phone; please tell the organizer.'); return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try{
+    await F.send('problem_report', F.testerCode(), {area:a.area, severity:a.severity, what:a.what, contact:a.contact, diag});
+    F.ls.del('reportDraft');
+    document.getElementById('questions').hidden = true; document.getElementById('diagBox').hidden = true; btn.hidden = true;
+    show('ok', 'Sent. Thank you, this really helps.');
+    again.hidden = false;
+    window.scrollTo({top:0, behavior:'smooth'});
+  }catch{
+    show('err', 'Couldn’t send right now. Check your connection and try again. Your report is saved on this phone.');
+  }
+  btn.disabled = false; btn.textContent = 'Send report';
+});
+again.addEventListener('click', () => location.reload());
+})();
+</script>
+</body>
+</html>
