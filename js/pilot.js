@@ -5,6 +5,21 @@ const E = window.Engine;
 const $ = id => document.getElementById(id);
 const app = $('app');
 
+/* ================= Installed iPhone app sizing =================
+   In an iPhone home-screen app with the status bar drawn over the page, iOS reports the viewport as shorter
+   by the status bar's height yet draws from the very top, leaving a strip under the tab bar. The installed
+   app always fills the screen, so size it to the physical screen instead. */
+if (navigator.standalone === true){
+  const fitScreen = () => {
+    const land = window.matchMedia && matchMedia('(orientation: landscape)').matches;
+    const h = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+    document.documentElement.style.setProperty('--app-h', h + 'px');
+  };
+  fitScreen();
+  window.addEventListener('resize', fitScreen);
+  window.addEventListener('orientationchange', () => setTimeout(fitScreen, 250));
+}
+
 /* ================= Storage ================= */
 const store = {
   get(k, d){ try{ const v = localStorage.getItem('pecan.' + k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
@@ -31,7 +46,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '1.4';
+const APP_V = '1.5';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;

@@ -1,8 +1,9 @@
 /* Pilot shell: a full-height app with the map as home, tabs along the bottom. */
 [hidden] { display: none !important; }
-html, body { height: 100%; }
+html, body { height: 100%; margin: 0; }
 body { padding: 0; overflow: hidden; }
-.app { height: 100%; display: flex; flex-direction: column; }
+/* --app-h is set only for installed iPhone apps, where iOS reports a height short by the status bar. */
+.app { height: var(--app-h, 100%); display: flex; flex-direction: column; }
 .view { flex: 1; min-height: 0; position: relative; }
 .view-scratch, .view-collection, .view-debug { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .pane { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;
