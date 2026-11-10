@@ -31,7 +31,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '0.5';
+const APP_V = '0.6';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -520,8 +520,9 @@ function updateSheet(){
 $('nsClose').addEventListener('click', closeSheet);
 $('nsScratch').addEventListener('click', () => {
   const n = sheetNode; if (!n || nodeInfo(n).st !== 'inrange') return;
+  const m = markers.get(n.id), tok = m && m.getElement() ? m.getElement().querySelector('.tok') : null;
   closeSheet();
-  openScratch(drawCard(), {source:'node', node:n.id, label:n.name, provenance:n.prov || `First pulled at ${n.name}`});
+  openScratch(drawCard(), {source:'node', node:n.id, label:n.name, provenance:n.prov || `First pulled at ${n.name}`}, tok);
   event('node_scratch', {node:n.id, src:n.src, kind:n.kind});
 });
 
@@ -537,14 +538,56 @@ function drawCard(){
 
 /* ================= Scratch flow ================= */
 let current = null;
-function openScratch(card, ctx){
+function openScratch(card, ctx, fromEl){
   current = ctx;
+  const motionOk = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fromRect = fromEl && motionOk ? fromEl.getBoundingClientRect() : null;
   showView('vScratch'); app.classList.add('scratching');
   $('scratchWhere').textContent = ctx.label;
   $('scratchDone').hidden = true; $('scratchBack').hidden = false;
   $('vScratch').scrollTop = 0;
   E.newCard(card, ctx);
   event('scratch_open', {source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank});
+  if (fromRect && fromRect.width) flyIn(fromRect, ctx.source === 'node');
+}
+
+/* The tapped token lifts off the map, spins and grows into the card, then the real card fades in beneath it. */
+function flyIn(from, gold){
+  const view = $('vScratch'), cardEl = $('stage').querySelector('.card');
+  if (!cardEl) return;
+  // Keep the map on screen under the flight: the scratch view floats above it, invisible, until the card lands.
+  const mapView = $('vMap');
+  mapView.hidden = false; app.classList.add('flying');
+  const to = cardEl.getBoundingClientRect();
+  if (!to.width){ mapView.hidden = true; app.classList.remove('flying'); return; }
+  view.style.opacity = '0'; view.style.pointerEvents = 'none';
+  const dim = mapView.animate([{filter:'brightness(1)'}, {filter:'brightness(.35)'}], {duration:760, easing:'ease-in', fill:'forwards'});
+  const fly = document.createElement('div');
+  fly.className = 'flyer' + (gold ? ' gold' : '');
+  fly.innerHTML = '<div class="fly-face"><span>HL</span></div>';
+  Object.assign(fly.style, {left:to.left + 'px', top:to.top + 'px', width:to.width + 'px', height:to.height + 'px', fontSize:(to.width*.26) + 'px'});
+  document.body.appendChild(fly);
+  const s = Math.min(from.width/to.width, from.height/to.height);
+  const dx = from.left + from.width/2 - (to.left + to.width/2), dy = from.top + from.height/2 - (to.top + to.height/2);
+  const P = 'perspective(1100px) ';
+  const anim = fly.animate([
+    {transform:`${P}translate(${dx}px, ${dy}px) scale(${s}) rotateY(0deg)`},
+    {transform:`${P}translate(${dx*.45}px, ${dy*.45 - 40}px) scale(${(s + 1)/2.4}) rotateY(560deg)`, offset:.5},
+    {transform:`${P}translate(0px, 0px) scale(1) rotateY(1080deg)`}
+  ], {duration:760, easing:'cubic-bezier(.33,.05,.2,1)', fill:'forwards'});
+  const done = () => {
+    const v = view.animate([{opacity:0}, {opacity:1}], {duration:180, fill:'forwards'});
+    const f = fly.animate([{opacity:1}, {opacity:0}], {duration:220, fill:'forwards'});
+    v.finished.then(() => {
+      view.style.opacity = ''; view.style.pointerEvents = ''; v.cancel();
+      if (app.classList.contains('scratching')) mapView.hidden = true;
+      app.classList.remove('flying'); dim.cancel();
+    }, () => {});
+    f.finished.then(() => fly.remove(), () => fly.remove());
+    try{ E.Sound.land(1); }catch{}
+    try{ navigator.vibrate && navigator.vibrate(14); }catch{}
+  };
+  anim.finished.then(done, done);
 }
 function closeScratch(){
   app.classList.remove('scratching'); current = null;
@@ -603,7 +646,7 @@ const dailyReady = () => Date.now() - daily.last >= DAY;
 $('dailyBtn').addEventListener('click', () => {
   if (!dailyReady()) return;
   event('daily_open');
-  openScratch(drawCard(), {source:'daily', label:'Daily card', provenance:'Daily card'});
+  openScratch(drawCard(), {source:'daily', label:'Daily card', provenance:'Daily card'}, $('dailyBtn'));
 });
 function updateChips(){
   const d = $('dailyBtn');
