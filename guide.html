@@ -39,6 +39,17 @@ b{font-weight:700}
 .tok{display:inline-grid; place-items:center; width:20px; height:27px; border-radius:4px; background:#1B2632; border:2px solid var(--teal);
   font-family:var(--card); font-size:10px; color:#F1ECE1; vertical-align:-6px; margin:0 2px}
 .tok.gold{border-color:var(--gold); box-shadow:0 0 0 3px rgba(242,194,48,.25)}
+/* Inline copies of the map's bingo balls and dice cache pin */
+.mball{--bc:#3DA65F; position:relative; display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%; vertical-align:-6px; margin:0 2px;
+  background:radial-gradient(circle at 34% 28%, rgba(255,255,255,.7) 0 7%, transparent 26%), radial-gradient(circle at 50% 55%, var(--bc) 0 58%, color-mix(in srgb, var(--bc) 60%, #000) 100%); box-shadow:0 0 0 1.5px #0b0e12}
+.mball b{width:15px; height:15px; border-radius:50%; background:#fbf8f0; color:#10141a; font:700 8px/15px system-ui, sans-serif; text-align:center}
+.mball.dim{filter:saturate(.35) brightness(.72)}
+.mball.p1{box-shadow:0 0 0 1.5px #0b0e12, 0 0 0 4px var(--gold)}
+.mball.p2{margin-right:9px; box-shadow:0 0 0 1.5px #0b0e12, 0 0 0 4px var(--gold), 0 0 10px 3px rgba(242,194,48,.6)}
+.mball.p2::after{content:"★"; position:absolute; top:-8px; right:-9px; width:13px; height:13px; border-radius:50%; background:var(--gold); color:#1A1108; font:900 9px/13px system-ui, sans-serif; text-align:center}
+.mdie{display:inline-grid; grid-template:repeat(3,1fr)/repeat(3,1fr); width:20px; height:20px; padding:3px; border-radius:5px; background:#F1ECE1; border:2px solid var(--teal); vertical-align:-5px; transform:rotate(-8deg); margin:0 2px}
+.mdie i{width:3.5px; height:3.5px; border-radius:50%; background:#1A1F26; place-self:center}
+.mdie i:nth-child(1){grid-area:1/1} .mdie i:nth-child(2){grid-area:1/3} .mdie i:nth-child(3){grid-area:2/2} .mdie i:nth-child(4){grid-area:3/1} .mdie i:nth-child(5){grid-area:3/3}
 .grades{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin-top:6px}
 .grades dt{font-family:var(--card); font-weight:700}
 .grades dd{margin:0; color:var(--muted)}
@@ -90,10 +101,12 @@ footer{color:var(--muted); font-size:14px; text-align:center}
     <h2>How to play</h2>
     <ol>
       <li><b>Find a spot.</b> Card-shaped markers <span class="tok">HL</span> on the map are spots to scratch, usually at parks, public art, landmarks, cafés, or along footpaths. Each shows how far away it is.</li>
-      <li><b>Walk to it.</b> When you're within about 75 m, it turns gold and pulses <span class="tok gold">HL</span> and says <b>In reach</b>. If your GPS is rough (common indoors), step outside or wait a moment.</li>
-      <li><b>Tap it, then Scratch.</b> You'll see which card you got right away. Its rank shows as pips: one to four dots, plus a diamond for the rarest.</li>
+      <li><b>Get closer to see its bingo ball.</b> Within about 200 m, the card turns into the bingo ball of the card waiting there, like <span class="mball dim"><b>9</b></span> (dim means that number isn't open on your board). A <span style="color:var(--gold)">gold ring</span> <span class="mball p1"><b>17</b></span> means that number is open somewhere on your board. Within about 100 m, a <span style="color:var(--gold)">star</span> <span class="mball p2"><b>52</b></span> means that exact square is open: that card will daub it.</li>
+      <li><b>Walk to it.</b> When you're within about 75 m, it pulses gold and says <b>In reach</b>. If your GPS is rough (common indoors), step outside or wait a moment.</li>
+      <li><b>Tap it, then Scratch.</b> You'll see which card you got right away, and its bingo ball in the top corner. Its rank shows as pips: one to four dots, plus a diamond for the rarest. Have a die? Tap <b>Add a die</b> under the card before you start.</li>
       <li><b>Scratch the silver panel.</b> Drag one finger across it, like a coin on a scratcher. Everything under the panel is decided the moment you pass the reveal point, not before.</li>
       <li><b>Come back later.</b> A spot recharges about 2 hours after you use it. You also get one <b>Daily card</b> each day, no walking needed: tap the button at the top of the map.</li>
+      <li><b>Pick up dice.</b> Die-shaped pins <span class="mdie"><i></i><i></i><i></i><i></i><i></i></span> are <b>dice caches</b>. Walk to one and tap <b>Pick up die</b>. It restocks after about 6 hours.</li>
     </ol>
   </section>
 
