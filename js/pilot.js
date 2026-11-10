@@ -72,7 +72,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '2.1';
+const APP_V = '2.2';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -979,6 +979,8 @@ $('vMap').querySelector('.brand').addEventListener('click', () => {
   if (taps.length >= 5){ taps = []; P.debug = !P.debug; saveP(); applyDebug(); event('debug_toggle', {on:P.debug}); }
 });
 if (location.hash === '#debug'){ P.debug = true; saveP(); }
+// Coming back from the survey, problem report or guide: land on Collection, where those were opened.
+if (location.hash === '#collection'){ showView('vCollection'); try{ history.replaceState(null, '', location.pathname + location.search); }catch{} }
 
 function bindPRange(id, key, fmt, after){
   const el = $(id), out = $('o' + id.slice(1));

@@ -9,15 +9,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="css/forms.css?v=2.1">
+<link rel="stylesheet" href="css/forms.css?v=2.2">
 </head>
 <body>
 <main>
+  <nav class="topbar"><a class="back" href="./#collection" aria-label="Back to Pecan Pie">‹ Back</a><span class="saved">Saved as you type</span></nav>
   <header>
     <img src="icons/apple-touch-icon.png" alt="" width="56" height="56">
     <div>
       <h1>End-of-week survey</h1>
-      <p class="sub">About 5 minutes. Your answers are saved on this phone as you go, so you can stop and come back.</p>
+      <p class="sub">About 5 minutes. Your answers are saved on this phone as you go, so you can tap Back any time and finish later.</p>
     </div>
   </header>
   <div id="already" class="status ok" hidden>You've already sent this survey. Thanks! Sending it again updates your answers.</div>
@@ -26,10 +27,10 @@
     <div id="status" class="status" hidden role="status"></div>
     <button class="btn primary" id="send" type="submit">Send my answers</button>
   </form>
-  <footer><a href="./">Back to Pecan Pie</a> · <a href="guide.html">Tester guide</a></footer>
+  <footer><a href="./#collection">Back to Pecan Pie</a> · <a href="guide.html">Tester guide</a></footer>
 </main>
 <script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/forms.js?v=2.1"></script>
+<script src="js/forms.js?v=2.2"></script>
 <script>
 (() => {
 'use strict';
