@@ -162,3 +162,5 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .install-text b { font-size: 15px; }
 .install-text span { color: var(--muted); }
 .install-actions { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+
+.tester-code a { color: var(--accent); font-weight: 700; white-space: nowrap; }

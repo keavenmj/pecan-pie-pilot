@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#171b20">
+<title>Pecan Pie Tester Guide</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Alegreya+SC:wght@700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* One readable column in the app's night palette, styled like the game it explains. */
+:root{
+  --bg:#171b20; --surface:#1f262e; --ink:#e7ecf0; --muted:#9aa6b2; --line:#2c3540;
+  --teal:#2A8A86; --gold:#F2C230; --accent:#D58E55;
+  --display:"Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --card:"Alegreya SC", Georgia, serif; --mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--display); font-size:17px; line-height:1.55;
+  padding-left:max(18px, env(safe-area-inset-left, 0px)); padding-right:max(18px, env(safe-area-inset-right, 0px));
+  padding-block:calc(24px + env(safe-area-inset-top, 0px)) calc(40px + env(safe-area-inset-bottom, 0px))}
+main{max-width:620px; margin:0 auto; display:flex; flex-direction:column; gap:28px}
+header{display:flex; align-items:center; gap:14px}
+header img{border-radius:12px; flex-shrink:0}
+h1{font-size:30px; line-height:1.1; margin:0; text-wrap:balance}
+.sub{color:var(--muted); margin:4px 0 0; font-size:15px}
+h2{font-size:21px; margin:0 0 10px; text-wrap:balance}
+p{margin:0 0 10px} p:last-child{margin-bottom:0}
+section{display:flex; flex-direction:column}
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px}
+.panel.key{border-color:var(--teal)}
+ol,ul{margin:0; padding-left:22px; display:flex; flex-direction:column; gap:8px}
+li::marker{color:var(--muted)}
+b{font-weight:700}
+.tok{display:inline-grid; place-items:center; width:20px; height:27px; border-radius:4px; background:#1B2632; border:2px solid var(--teal);
+  font-family:var(--card); font-size:10px; color:#F1ECE1; vertical-align:-6px; margin:0 2px}
+.tok.gold{border-color:var(--gold); box-shadow:0 0 0 3px rgba(242,194,48,.25)}
+.grades{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin-top:6px}
+.grades dt{font-family:var(--card); font-weight:700}
+.grades dd{margin:0; color:var(--muted)}
+.g1{color:#4CC096} .g2{color:#6EA2E6} .g3{color:#D9B347} .g4{color:#E77C69}
+.platform{display:grid; gap:12px}
+.platform h3{font-size:16px; margin:0 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em}
+code,.mono{font-family:var(--mono); font-size:.92em; background:#11161b; border:1px solid var(--line); border-radius:6px; padding:1px 6px}
+a{color:var(--accent)}
+.todo{color:var(--gold)}
+.cta{display:block; text-align:center; background:var(--accent); color:#1A1108; font-weight:700; text-decoration:none; border-radius:12px; padding:14px; font-size:17px}
+footer{color:var(--muted); font-size:14px; text-align:center}
+@media (min-width:560px){ .platform{grid-template-columns:1fr 1fr} }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="icons/icon-192.png" alt="" width="56" height="56">
+    <div>
+      <h1>Pecan Pie tester guide</h1>
+      <p class="sub">A one-week test. Walk to nearby spots, scratch cards, and build a set. Nothing costs money.</p>
+    </div>
+  </header>
+
+  <a class="cta" href="./">Open Pecan Pie</a>
+
+  <section>
+    <h2>Before you start</h2>
+    <div class="panel key">
+      <ol>
+        <li><b>Open the game on your phone</b> in Safari on iPhone, or Chrome on Android.</li>
+        <li><b>Add it to your home screen first, then play from that icon.</b> It opens full screen, like an app. On iPhone, the home-screen version keeps its own collection, separate from the browser, so install before you collect anything.</li>
+        <li><b>Allow location</b> when it asks. Choose <b>While Using the App</b>. The game uses it to show nearby spots and check when you've reached one.</li>
+      </ol>
+    </div>
+    <div class="platform" style="margin-top:12px">
+      <div class="panel">
+        <h3>iPhone</h3>
+        <p>Tap the <b>Share</b> button, scroll, and choose <b>Add to Home Screen</b>. In Chrome on iPhone, the Share button is in the address bar.</p>
+      </div>
+      <div class="panel">
+        <h3>Android</h3>
+        <p>Tap <b>Install</b> when the game offers it, or open Chrome's <b>⋮</b> menu and choose <b>Add to Home screen</b> or <b>Install app</b>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How to play</h2>
+    <ol>
+      <li><b>Find a spot.</b> Card-shaped markers <span class="tok">HL</span> on the map are spots to scratch, usually at parks, public art, landmarks, cafés, or along footpaths. Each shows how far away it is.</li>
+      <li><b>Walk to it.</b> When you're within about 75 m, it turns gold and pulses <span class="tok gold">HL</span> and says <b>In reach</b>. If your GPS is rough (common indoors), step outside or wait a moment.</li>
+      <li><b>Tap it, then Scratch.</b> You'll see which card you got right away. Its rank shows as pips: one to four dots, plus a diamond for the rarest.</li>
+      <li><b>Scratch the silver panel.</b> Drag one finger across it, like a coin on a scratcher. Everything under the panel is decided the moment you pass the reveal point, not before.</li>
+      <li><b>Come back later.</b> A spot recharges a few hours after you use it. You also get one <b>Daily card</b> each day, no walking needed: tap the button at the top of the map.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>What's under the panel</h2>
+    <div class="panel">
+      <p>Every card you scratch goes into your collection. What varies is how good that copy is:</p>
+      <ul>
+        <li><b>Finish:</b> some copies are <b>Holo</b>, with a rainbow sheen.</li>
+        <li><b>Print number:</b> most cards are numbered, like <span class="mono">47/500</span>. Low numbers are rare.</li>
+        <li><b>Condition:</b> set by <i>how evenly</i> you scratch, not how fast. Cover the whole panel in light, even passes for the best result.</li>
+        <li><b>Four stats</b> (Prob, Luck, Entr, Var): each has a normal range. A stat that lands past its range shows in <span style="color:var(--gold)">gold</span>. That's a rare one.</li>
+      </ul>
+      <dl class="grades">
+        <dt class="g1">Pristine</dt><dd>The panel comes off clean.</dd>
+        <dt class="g2">Good</dt><dd>Light marks left behind.</dd>
+        <dt class="g3">Fair</dt><dd>Patchy.</dd>
+        <dt class="g4">Poor</dt><dd>Your scratch pattern stays on the card. Hold the panel to read through it.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <h2>Your collection</h2>
+    <ul>
+      <li><b>Set</b> shows the 12 cards in Harbor Lights. Empty slots are dark until you find that card.</li>
+      <li><b>My cards</b> shows every copy you own, duplicates included. Tap any card to look closely.</li>
+      <li>Changed your mind mid-scratch? Tap <b>Back</b>. The same card waits for you at that spot, and your scratching so far is saved.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Stay safe</h2>
+    <div class="panel">
+      <ul>
+        <li>Spots are placed at public places and on paths, away from roads, but map data isn't perfect. <b>Never enter private property, a road, or anywhere unsafe</b> to reach one. Just skip it.</li>
+        <li>Look up while you walk. Don't play while driving or cycling.</li>
+        <li>GPS is less accurate indoors and between tall buildings. That's normal.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Your tester code and feedback</h2>
+    <p>Your tester code is at the bottom of the <b>Collection</b> screen, like <span class="mono">T-4KZ9</span>. Please include it in your feedback so we can match your answers to your play.</p>
+    <p>Play however you naturally would. There's no target, and playing less is useful information too. At the end of the week we'll send a short survey (about 5 minutes).</p>
+    <p class="todo">Survey link: [add before sending]</p>
+    <p class="todo">Questions or problems: [add your contact before sending]</p>
+  </section>
+
+  <section>
+    <h2>What we collect</h2>
+    <p>The game records gameplay events, like spots reached, cards scratched, and how you scratched, with your random tester code and the date. It doesn't send your location coordinates, name, or contact details. Your collection stays on your phone.</p>
+  </section>
+
+  <footer>Thanks for testing Pecan Pie.</footer>
+</main>
+</body>
+</html>
