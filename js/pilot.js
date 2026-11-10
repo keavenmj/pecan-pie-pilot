@@ -31,7 +31,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '1.0';
+const APP_V = '1.1';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -637,6 +637,7 @@ function flyIn(from, gold){
 function closeScratch(){
   app.classList.remove('scratching'); current = null;
   showView('vMap');
+  setTimeout(maybeShowInstallTip, 600);
 }
 $('scratchBack').addEventListener('click', () => {
   if (E.revealed || E.sequenceRunning) return closeScratch();
@@ -683,7 +684,7 @@ window.Pilot = {
       strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:inst.source !== 'debug' && realCards().filter(c => c.cardId === card.id).length === 1});
     updateChips();
   },
-  onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; }
+  onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; installTipEarned = true; }
 };
 
 /* ================= Daily card ================= */
@@ -909,6 +910,33 @@ $('dWipe').addEventListener('click', () => {
 });
 $('newCard').addEventListener('click', () => openScratch(drawCard(), {source:'debug', label:'Test card', provenance:'Test card'}));
 
+/* ================= Home-screen install ================= */
+// Offline shell: the service worker keeps the app's own files on the phone.
+if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+// A one-time tip after the first card. Android gets a real Install button; iPhone gets the Share steps.
+let installPrompt = null, installTipEarned = false;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; });
+window.addEventListener('appinstalled', () => { event('app_installed'); hideInstallTip('installed'); });
+function maybeShowInstallTip(){
+  if (standalone() || store.get('installTip', '') || $('vMap').hidden) return;
+  if (!installTipEarned && !realCards().length) return;
+  const tip = $('installTip'); if (!tip.hidden) return;
+  if (installPrompt){ $('installGo').hidden = false; $('installHow').textContent = 'Opens full screen like an app. Install before collecting more: the installed app keeps its own collection.'; }
+  else if (PLATFORM !== 'iOS'){ $('installHow').textContent = 'Open your browser menu and choose Add to Home screen or Install app. Do it before collecting more: the installed app keeps its own collection.'; }
+  tip.hidden = false;
+  event('install_tip_shown', {platform:PLATFORM, prompt:!!installPrompt});
+}
+function hideInstallTip(why){ $('installTip').hidden = true; store.set('installTip', why || 'dismissed'); }
+$('installLater').addEventListener('click', () => { hideInstallTip('dismissed'); event('install_tip_dismissed'); });
+$('installGo').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  try{ const choice = await installPrompt.userChoice; event('install_prompt_result', {outcome:choice && choice.outcome}); if (choice && choice.outcome === 'accepted') hideInstallTip('installed'); }catch{}
+  installPrompt = null; $('installGo').hidden = true;
+});
+
 /* ================= Boot ================= */
 applyDebug();
 updateChips(); updateGps();
@@ -916,5 +944,6 @@ event('app_open', {cards:collection.length});
 updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
+setTimeout(maybeShowInstallTip, 4000);
 window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView};
 })();

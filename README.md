@@ -29,6 +29,16 @@ It's a static web app with no build step and no backend. Host the folder anywher
 - **Card draws:** weighted by rank: Common 45%, Uncommon 28%, Rare 17%, Legendary 8%, Mythic 2%.
 - **Saving:** everything is saved in the phone's browser storage, including each card's frozen residue.
 
+## Home-screen install
+
+- **Install files:** `manifest.webmanifest`, the iPhone meta tags, and `icons/` make the app installable. From the home screen it opens full screen with no browser bar.
+- **Offline shell:** `sw.js` caches the app's own files, so it opens instantly and on a weak signal.
+  - The page and `js/config.js` are fetched from the network first, so updates and endpoint changes arrive right away.
+  - Map tiles, OpenStreetMap lookups and logging are never cached.
+- **Install tip:** after a tester's first card, a one-time tip explains how to install: the Share steps on iPhone, an Install button on Android. Install events are logged.
+- **iPhone storage:** an installed iPhone web app keeps its own storage, separate from Safari's, so testers should install before they start collecting.
+- **Version bumps:** when changing the `?v=` file versions in `index.html`, also bump `CACHE` in `sw.js` so old files are cleared.
+
 ## Debug
 
 Tap the "Pecan Pie" title on the map five times within three seconds, or open the app with `#debug` at the end of the address. The Debug tab adds:

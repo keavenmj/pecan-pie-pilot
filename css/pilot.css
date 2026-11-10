@@ -144,3 +144,13 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 
 /* While a card flies in, the scratch view floats over the still-visible map. */
 .app.flying .view-scratch { position: fixed; inset: 0; z-index: 1500; background: var(--bg); }
+
+/* ---------- Install tip ---------- */
+.install-tip { position: absolute; z-index: 1050; left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); bottom: 92px;
+  display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px 12px; align-items: center; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.install-tip img { border-radius: 10px; }
+.install-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; }
+.install-text b { font-size: 15px; }
+.install-text span { color: var(--muted); }
+.install-actions { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
