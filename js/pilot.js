@@ -57,8 +57,10 @@ const RANK_WEIGHTS = [45, 28, 17, 8, 2];                        // Common to Myt
 const NODE_NAMES = ['Tidewater Post', 'Gull Rock', 'Lantern Steps', 'Rope Yard', 'Salt Gate', 'Breakwater Bench', 'Kelp Corner',
   'Pilot House', 'Harbor Clock', 'Net Loft', 'Bell Tower', 'Ferry Slip', 'Driftwood Arch', 'Signal Hill', 'Shell Walk', 'Mooring Post',
   'Old Customs', 'Fog Bell', 'Cannery Row', 'Pier Gate'];
-const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:4, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm'}, store.get('pilot', {}));
+const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:2, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm'}, store.get('pilot', {}));
 const saveP = () => store.set('pilot', P);
+// Card spots now recharge in 2 hours (was 4). Settings saved before the change still say 4, so move them once.
+if ((P.coolV || 0) < 2){ if (P.cool === 4) P.cool = 2; P.coolV = 2; saveP(); }
 
 const NODES_V = 4;                                              // bump to reseed everyone after a node-format change
 let nodes = store.get('nodesV', 0) === NODES_V ? store.get('nodes', null) : null;
@@ -72,7 +74,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '2.6';
+const APP_V = '2.7';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -1428,6 +1430,8 @@ function askPersist(){
 if (standalone() || realCards().length) askPersist();
 // In another app's built-in browser, storage is separate and often cleared: say so plainly.
 if (IN_APP) setTimeout(() => mapNote('You’re in another app’s browser. Open Pecan Pie in your phone’s browser or from your home screen to keep your collection.', 10000), 1500);
+// Spots already recharging under the old 4-hour cooldown come back no later than 2 hours from now.
+if (nodes && !store.get('cool2Capped', false)){ const cap = Date.now() + P.cool*3600e3; nodes.forEach(n => { if (n.type !== 'die' && n.coolUntil > cap) n.coolUntil = cap; }); store.set('nodes', nodes); store.set('cool2Capped', true); }
 // Copies collected before bingo existed get a ball now, so they can count toward the board.
 (() => { let changed = false, notes = [];
   for (const inst of collection){ if (!inst.ball && !isTest(inst)){ inst.ball = rollBall(); changed = true; notes = notes.concat(daub(inst)); } }

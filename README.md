@@ -28,7 +28,7 @@ It's a static web app with no build step and no backend. Host the folder anywher
   - **Walkable spots fill the gaps:** points along footpaths, trails, plazas and bike paths, never sidewalks, crosswalks, tunnels, or indoor or private paths. Each must be at least 15 m from roads and rail lines, at least 8 m from rivers and canals, and outside mapped lakes and ponds, with at most three per path.
   - **Random spots** are used only if OpenStreetMap can't be reached or nothing walkable is mapped nearby, and the map says so.
 - **Proximity:** a node shows on the map within 400 m. It can be scratched within 75 m, and only when the phone's reported GPS error is ±100 m or better.
-- **Nodes:** each node gives one card, then recharges for 4 hours.
+- **Nodes:** each card spot gives one card, then recharges for 2 hours (adjustable in Debug).
 - **Daily card:** one every 24 hours, no location needed.
 - **Bingo:** every copy gets a bingo ball (letter B to O, number 1 to 30, chosen independently) when it's pulled. Collecting a copy daubs the matching open square on the player's personal 5x5 board (free center). Rewards pay once per direction: the first row, the first column and the first diagonal each pay a die and a badge (whichever comes first pays Uncommon, the second Rare, the third Legendary). Other lines pay nothing. A full board pays a Mythic die. A spot's ball is fixed until its card is taken.
 - **Map rings for card spots:** beyond 200 m the spot shows the card icon; within 200 m it shows its bingo ball, dimmed unless its number is open somewhere on the board (gold ring); within 100 m an exact open square gets a pulsing star. Both radii are adjustable in Debug.
