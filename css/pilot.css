@@ -171,23 +171,28 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
    sticker at the right end of the black pip band once the card resolves. */
 .desc-grid { grid-template-columns: repeat(3, 1fr); }
 .pip-set { display: flex; align-items: center; gap: 1.6cqw; }
-.grade-badge { position: absolute; right: 2.6cqw; top: 50%; transform: translateY(-50%); opacity: 0; pointer-events: none;
-  font-family: var(--font-display); font-weight: 700; font-size: 2.5cqw; letter-spacing: .09em; text-transform: uppercase; line-height: 1;
-  padding: .7cqw 1.7cqw; border-radius: 3cqw; border: .35cqw solid currentColor; background: rgba(255,255,255,.04); }
-.grade-badge.shown { opacity: 1; transform: translateY(-50%) rotate(-4deg); }   /* settles slightly askew, like a hand stamp */
-.grade-badge.stamping { animation: stamp .42s cubic-bezier(.55,0,.75,.2) both; }
+.grade-badge { position: absolute; right: 2.2cqw; bottom: 1cqw; opacity: 0; pointer-events: none; transform-origin: 60% 60%;
+  font-family: var(--font-display); font-weight: 700; font-size: 4.9cqw; letter-spacing: .06em; text-transform: uppercase; line-height: 1;
+  padding: 1.35cqw 2.6cqw 1.2cqw; border-radius: 1.9cqw; color: #10141a; background: var(--gc, #ccc);
+  box-shadow: inset 0 0 0 .45cqw rgba(16,20,26,.55), inset 0 0 0 .8cqw var(--gc, #ccc), inset 0 0 0 1.05cqw rgba(16,20,26,.35), 0 .8cqw 1.6cqw -.4cqw rgba(0,0,0,.7); }
+/* Sits on the band's right end and rises over the bottom edge of the art, like a sticker slapped across the seam. */
+.grade-badge.shown { opacity: 1; transform: rotate(-5deg); }
+/* Lifts into view, hangs for a beat, then slams down with a small bounce. Impact is at 72% (about 650 ms). */
+.grade-badge.stamping { animation: stamp .9s both; }
 @keyframes stamp {
-  0%   { opacity: 0; transform: translateY(-170%) scale(2.6) rotate(-16deg); }
-  55%  { opacity: 1; transform: translateY(-50%) scale(.9) rotate(-2deg); }
-  72%  { transform: translateY(-50%) scale(1.08) rotate(-5deg); }
-  100% { opacity: 1; transform: translateY(-50%) scale(1) rotate(-4deg); }
+  0%   { opacity: 0; transform: translateY(-60%) scale(2.2) rotate(-14deg); animation-timing-function: ease-out; }
+  30%  { opacity: .95; transform: translateY(-95%) scale(2.4) rotate(-12deg); animation-timing-function: ease-in-out; }
+  52%  { opacity: 1; transform: translateY(-105%) scale(2.5) rotate(-11deg); animation-timing-function: cubic-bezier(.7,0,1,.6); }
+  72%  { transform: translateY(0) scale(.9) rotate(-4deg); animation-timing-function: ease-out; }
+  84%  { transform: translateY(0) scale(1.07) rotate(-6deg); animation-timing-function: ease-in-out; }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(-5deg); }
 }
-.grade-badge::after { content: ""; position: absolute; inset: -.4cqw; border-radius: inherit; border: .4cqw solid currentColor; opacity: 0; pointer-events: none; }
-.grade-badge.inked::after { animation: ink .5s ease-out; }
-@keyframes ink { 0% { opacity: .75; transform: scale(1); } 100% { opacity: 0; transform: scale(1.9, 2.6); } }
+.grade-badge::after { content: ""; position: absolute; inset: -.4cqw; border-radius: inherit; border: .5cqw solid var(--gc, #ccc); opacity: 0; pointer-events: none; }
+.grade-badge.inked::after { animation: ink .6s ease-out; }
+@keyframes ink { 0% { opacity: .8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.6, 2.2); } }
 @media (prefers-reduced-motion: reduce) { .grade-badge.stamping, .grade-badge.inked::after { animation: none; } }
-.grade-badge.g-Pristine { color: #4CC096; } .grade-badge.g-Good { color: #6EA2E6; }
-.grade-badge.g-Fair { color: #D9B347; } .grade-badge.g-Poor { color: #E77C69; }
+.grade-badge.g-Pristine { --gc: #4CC096; } .grade-badge.g-Good { --gc: #6EA2E6; }
+.grade-badge.g-Fair { --gc: #D9B347; } .grade-badge.g-Poor { --gc: #E77C69; }
 
 /* ---------- Sealed cards ---------- */
 .scratch-top #scratchKeep { margin-left: auto; flex-shrink: 0; }

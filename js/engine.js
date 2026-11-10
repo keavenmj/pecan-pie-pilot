@@ -160,14 +160,14 @@ function showGrade(g, animate){
   el.textContent = g; el.className = 'grade-badge shown g-' + g;
   if (!animate) return;
   void el.offsetWidth; el.classList.add('stamping');
-  // The stamp hits about 60% of the way through its drop: thud, ink ring, a jolt through the card, a haptic tap.
+  // The stamp hits 72% of the way through (650 ms of 900): thud, ink ring, a jolt through the card, a haptic tap.
   setTimeout(() => {
     el.classList.add('inked');
     try{ Sound.stamp(); }catch{}
     vibrate(18);
     if (cardEl && !matchMedia('(prefers-reduced-motion: reduce)').matches)
-      cardEl.animate([{transform:'translateY(0)'}, {transform:'translateY(.6%) scale(.996)'}, {transform:'translateY(0)'}], {duration:160, easing:'ease-out'});
-  }, 230);
+      cardEl.animate([{transform:'translateY(0)'}, {transform:'translateY(.8%) scale(.994)'}, {transform:'translateY(0)'}], {duration:200, easing:'ease-out'});
+  }, 650);
 }
 function renderCard(card, prov){
   const ed = card.run ? `Launch Ed. · Run ${card.run.label} of ${card.run.size}` : 'Launch Ed. · Evergreen';
