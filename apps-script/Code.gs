@@ -247,8 +247,9 @@ function buildSummary_() {
     sum.getRange(row, 1).setValue(b[0]).setFontWeight('bold');
     row++;
     const width = Math.max.apply(null, b[1].map(function (r) { return r.length; }));
-    const vals = b[1].map(function (r) { const c = r.slice(); while (c.length < width) c.push(''); return c; });
-    sum.getRange(row, 1, vals.length, width).setValues(vals);
+    // Dates go in as text: a Date in a block makes Sheets format neighboring cells as dates too (a 0 shows as 12/30/1899).
+    const vals = b[1].map(function (r) { const c = r.map(function (v) { return v instanceof Date ? dateText_(v) : v; }); while (c.length < width) c.push(''); return c; });
+    sum.getRange(row, 1, vals.length, width).setNumberFormat('General').setValues(vals);
     row += vals.length + 1;
   });
   sum.autoResizeColumns(1, 6);
@@ -395,6 +396,12 @@ function date_(s) { const d = new Date(s); return isNaN(d.getTime()) ? '' : d; }
 function day_(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : '';
+}
+function dateText_(d) {
+  const tz = (typeof Session !== 'undefined' && Session.getScriptTimeZone) ? Session.getScriptTimeZone() : 'UTC';
+  const timed = d.getHours() || d.getMinutes() || d.getSeconds();
+  if (typeof Utilities !== 'undefined') return Utilities.formatDate(d, tz, timed ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
+  return d.toISOString().slice(0, timed ? 16 : 10).replace('T', ' ');
 }
 function startOfDay_(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
 function key_(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }

@@ -183,9 +183,9 @@
           <div class="row"><label for="sStrength">Erase per pass</label><input type="range" id="sStrength" min="20" max="100" step="5"><output id="oStrength"></output></div>
           <div class="row"><label for="sWeight">Cell weighting</label><select id="sWeight"><option value="uniform">Uniform (all 64 equal)</option><option value="border">Clean border (inner 36)</option><option value="gaussian">Center-weighted (Gaussian)</option></select></div>
           <div class="row" id="rowSpread"><label for="sSpread">Gaussian spread</label><input type="range" id="sSpread" min="30" max="150" step="5"><output id="oSpread"></output></div>
-          <div class="row"><label for="sPristine">Pristine below σ</label><input type="range" id="sPristine" min="2" max="30" step="1"><output id="oPristine"></output></div>
-          <div class="row"><label for="sGood">Good below σ</label><input type="range" id="sGood" min="5" max="40" step="1"><output id="oGood"></output></div>
-          <div class="row"><label for="sFair">Fair below σ</label><input type="range" id="sFair" min="10" max="48" step="1"><output id="oFair"></output></div>
+          <div class="row"><label for="sPristine">Pristine below σ</label><input type="range" id="sPristine" min="2" max="30" step="0.5"><output id="oPristine"></output></div>
+          <div class="row"><label for="sGood">Good below σ</label><input type="range" id="sGood" min="5" max="40" step="0.5"><output id="oGood"></output></div>
+          <div class="row"><label for="sFair">Fair below σ</label><input type="range" id="sFair" min="10" max="48" step="0.5"><output id="oFair"></output></div>
           <div class="row"><label for="sHeat">Grid heatmap</label><select id="sHeat"><option value="off">Off</option><option value="on">On while scratching</option><option value="always">Always, with values</option></select></div>
           <p class="note">σ is the population standard deviation of the 64 cell erase values. The most uneven scratch possible at a 65% line is about 0.477, so cutoffs live between 0 and 0.48. Grading uses the weighted σ; the reveal line uses the plain mean of all 64 cells.</p>
         </div>
