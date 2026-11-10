@@ -21,10 +21,35 @@ if (navigator.standalone === true){
 }
 
 /* ================= Storage ================= */
+// Everything lives in this phone's local storage. If a save fails because storage is full, logs are trimmed
+// and the save retried, so the tester code, collection and nodes always win over diagnostic history.
+const storageNoted = {};
 const store = {
   get(k, d){ try{ const v = localStorage.getItem('pecan.' + k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
-  set(k, v){ try{ localStorage.setItem('pecan.' + k, JSON.stringify(v)); return true; }catch{ return false; } }
+  set(k, v){
+    let text; try{ text = JSON.stringify(v); }catch{ return false; }
+    try{ localStorage.setItem('pecan.' + k, text); return true; }catch{}
+    let ok = false;
+    try{ trimStorage(); localStorage.setItem('pecan.' + k, text); ok = true; }catch{}
+    noteStorageTrouble(k, ok, text.length);
+    return ok;
+  }
 };
+function trimStorage(){
+  try{ if (events.length > 100){ events = events.slice(-100); localStorage.setItem('pecan.events', JSON.stringify(events)); } }catch{}
+  try{ const lab = JSON.parse(localStorage.getItem('scratchlab.log') || '[]'); if (lab.length > 30) localStorage.setItem('scratchlab.log', JSON.stringify(lab.slice(-30))); }catch{}
+  try{ if (outbox.length > 1500){ outbox = outbox.slice(-1500); localStorage.setItem('pecan.outbox', JSON.stringify(outbox)); } }catch{}
+}
+function localChars(){
+  let n = 0;
+  try{ for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); n += k.length + (localStorage.getItem(k) || '').length; } }catch{}
+  return n;
+}
+function noteStorageTrouble(key, recovered, chars){
+  if (storageNoted[key + recovered]) return;           // once per key per launch, and never recursive
+  storageNoted[key + recovered] = true;
+  setTimeout(() => { try{ event('storage_failed', {key, recovered, chars, localChars:localChars()}); }catch{} }, 0);
+}
 
 /* ================= Config ================= */
 const DEFAULT_CENTER = {lat:33.7701, lng:-118.1937};          // Long Beach, used only for mock location with no fix yet
@@ -42,11 +67,12 @@ let collection = store.get('collection', []);
 let events = store.get('events', []);
 let daily = store.get('daily', {last:0});
 let testerId = store.get('tid', null);
+const newIdentity = !testerId;
 if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCase(); store.set('tid', testerId); }
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '1.9';
+const APP_V = '2.0';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -58,10 +84,10 @@ function event(type, data){
   const now = new Date();
   const e = Object.assign({at:now.toISOString(), day:localDay(now), type, session, tester:P.tester || testerId,
     id:now.getTime().toString(36) + Math.floor(E.rng()*1e8).toString(36), app:APP_V, platform:PLATFORM, standalone:standalone()}, data || {});
-  events.push(e); if (events.length > 3000) events = events.slice(-3000);
+  events.push(e); if (events.length > 300) events = events.slice(-300);   // the Sheet keeps the full record
   store.set('events', events);
   if (endpoint()){
-    outbox.push(e); if (outbox.length > 5000) outbox = outbox.slice(-5000);
+    outbox.push(e); if (outbox.length > 2000) outbox = outbox.slice(-2000);
     store.set('outbox', outbox); scheduleFlush();
   }
 }
@@ -569,9 +595,15 @@ function pendingCard(key){
 }
 function snapshotProgress(){
   const st = E.state, m = st.mask; if (!m) return null;
-  const b = new Uint8Array(m.length); for (let i = 0; i < m.length; i++) b[i] = Math.round(m[i]*255);
+  // Saved at half resolution (a quarter of the size); restoreProgress scales it back up.
+  const w = Math.ceil(st.mw/2), h = Math.ceil(st.mh/2), b = new Uint8Array(w*h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    let sum = 0, n = 0;
+    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++){ const yy = y*2 + dy, xx = x*2 + dx; if (yy < st.mh && xx < st.mw){ sum += m[yy*st.mw + xx]; n++; } }
+    b[y*w + x] = Math.round(sum/n*255);
+  }
   let bin = ''; for (let i = 0; i < b.length; i += 4096) bin += String.fromCharCode.apply(null, b.subarray(i, i + 4096));
-  return {mw:st.mw, mh:st.mh, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs,
+  return {mw:w, mh:h, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs,
     elapsed:st.firstT ? Math.max(0, Math.round((st.lastMoveT || performance.now()) - st.firstT)) : 0};
 }
 function restoreProgress(pr){
@@ -747,7 +779,7 @@ window.Pilot = {
       strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:inst.source !== 'debug' && realCards().filter(c => c.cardId === card.id).length === 1});
     updateChips();
   },
-  onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; installTipEarned = true; }
+  onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; installTipEarned = true; askPersist(); }
 };
 
 /* ================= Daily card ================= */
@@ -1020,7 +1052,29 @@ $('installGo').addEventListener('click', async () => {
 /* ================= Boot ================= */
 applyDebug();
 updateChips(); updateGps();
-event('app_open', {cards:collection.length});
+const IN_APP = /FBAN|FBAV|Instagram|Line\/|GSA\/|Snapchat|Twitter|LinkedInApp|MicroMessenger|; wv\)/.test(navigator.userAgent);
+event('app_open', {cards:collection.length, inApp:IN_APP});
+if (newIdentity){
+  let ref = ''; try{ ref = document.referrer ? new URL(document.referrer).hostname : ''; }catch{}
+  event('new_identity', {inApp:IN_APP, referrer:ref, localChars:localChars()});
+}
+// Storage health for diagnosing resets: how full it is, and whether the browser promised to keep it.
+(async () => {
+  try{
+    const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
+    const persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null;
+    event('storage_status', {localChars:localChars(), usageKB:est ? Math.round(est.usage/1024) : null, quotaKB:est ? Math.round(est.quota/1024) : null, persisted});
+  }catch{}
+})();
+// Ask the browser not to clear our storage. Asked once there's something worth keeping, or right away when installed.
+function askPersist(){
+  if (store.get('persistAsked', false) || !(navigator.storage && navigator.storage.persist)) return;
+  store.set('persistAsked', true);
+  navigator.storage.persist().then(granted => event('storage_persist', {granted}), () => {});
+}
+if (standalone() || realCards().length) askPersist();
+// In another app's built-in browser, storage is separate and often cleared: say so plainly.
+if (IN_APP) setTimeout(() => mapNote('You’re in another app’s browser. Open Pecan Pie in your phone’s browser or from your home screen to keep your collection.', 10000), 1500);
 updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);

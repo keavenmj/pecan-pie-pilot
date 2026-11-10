@@ -658,7 +658,7 @@ function resolve(st){
     cells: cells.map(c => +c.toFixed(3))
   };
   state.row = row;
-  log.push(row); if (log.length > 500) log = log.slice(-500);
+  log.push(row); if (log.length > 100) log = log.slice(-100);   // each row carries 64 grid values; keep storage small
   store.set('log', log);
   renderLog();
   if (window.Pilot) window.Pilot.onReveal({row, payload:p, card:state.card, ctx:state.ctx, pristine});
