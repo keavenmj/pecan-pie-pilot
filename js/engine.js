@@ -158,7 +158,16 @@ function pipRow(rank, extra){
 function showGrade(g, animate){
   const el = $('vGrade'); if (!el) return;
   el.textContent = g; el.className = 'grade-badge shown g-' + g;
-  if (animate){ void el.offsetWidth; el.classList.add('land'); }
+  if (!animate) return;
+  void el.offsetWidth; el.classList.add('stamping');
+  // The stamp hits about 60% of the way through its drop: thud, ink ring, a jolt through the card, a haptic tap.
+  setTimeout(() => {
+    el.classList.add('inked');
+    try{ Sound.stamp(); }catch{}
+    vibrate(18);
+    if (cardEl && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+      cardEl.animate([{transform:'translateY(0)'}, {transform:'translateY(.6%) scale(.996)'}, {transform:'translateY(0)'}], {duration:160, easing:'ease-out'});
+  }, 230);
 }
 function renderCard(card, prov){
   const ed = card.run ? `Launch Ed. · Run ${card.run.label} of ${card.run.size}` : 'Launch Ed. · Evergreen';
@@ -701,7 +710,7 @@ async function stagedReveal(card, p, pristine, row){
   await Promise.all(STATS.map((k, i) => countCF(card, p, k, i*90, 380 + R*60, alive)));
   if (!alive()) return;
   await wait(gap*.8); if (!alive()) return;
-  showGrade(p.grade, !seq.skip); Sound.land(3);   // the verdict on how you scratched lands last
+  showGrade(p.grade, !seq.skip);   // the verdict on how you scratched is stamped on last
   if (!(p.isHolo && pristine)) Sound.reveal(R, false);
   seq.running = false;
   finishReveal(row, p, pristine);
@@ -881,6 +890,7 @@ const Sound = (() => {
       if (riserGain){ riserGain.gain.setTargetAtTime(settings.fxTension ? tension*.03 : 0, now, .08); riser.frequency.setTargetAtTime(75 + tension*95, now, .12); }
     },
     stop(){ if (!ac) return; const now = ac.currentTime; if (hissGain) hissGain.gain.setTargetAtTime(0, now, .05); if (riserGain) riserGain.gain.setTargetAtTime(0, now, .06); },
+    stamp(){ if (!ctxOk()) return; const t = ac.currentTime + .005; tone(110, t, .22, 'sine', .3, 42); noiseHit(t, .06, 900, .8, .22, 'lowpass'); noiseHit(t + .01, .03, 3200, 2, .06); },
     crack(rank){ if (!ctxOk()) return; const t = ac.currentTime + .005; noiseHit(t, .11, 1700, .7, .3 + rank*.03); tone(150, t, .28, 'sine', .22, 45); },
     crinkle(size){
       if (!ctxOk()) return;

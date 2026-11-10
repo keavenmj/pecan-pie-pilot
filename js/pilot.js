@@ -46,7 +46,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '1.6';
+const APP_V = '1.7';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -559,7 +559,7 @@ function drawCard(){
 /* A node's or the daily card's identity is fixed the first time it's opened, and any scratch progress is saved
    when the player leaves, so backing out never re-rolls the card and coming back resumes the same scratch. */
 let pending = store.get('pending', {});
-const pendKey = ctx => ctx.source === 'node' ? 'node:' + ctx.node : ctx.source === 'daily' ? 'daily' : null;
+const pendKey = ctx => ctx.source === 'node' ? 'node:' + ctx.node : ctx.source === 'daily' ? 'daily' : ctx.source === 'sealed' ? 'sealed:' + ctx.instId : null;
 function pendingCard(key){
   const p = pending[key], c = p && E.CARDS.find(c => c.id === p.cardId);
   if (c) return c;
@@ -604,6 +604,7 @@ function openScratch(card, ctx, fromEl, progress){
   showView('vScratch'); app.classList.add('scratching');
   $('scratchWhere').textContent = ctx.label;
   $('scratchDone').hidden = true; $('scratchBack').hidden = false;
+  $('scratchKeep').hidden = !(ctx.source === 'node' || ctx.source === 'daily') || !!progress;
   $('vScratch').scrollTop = 0;
   E.newCard(card, ctx);
   if (progress) restoreProgress(progress);
@@ -650,8 +651,9 @@ function flyIn(from, gold){
   anim.finished.then(done, done);
 }
 function closeScratch(){
+  const back = current && current.returnTo || 'vMap';
   app.classList.remove('scratching'); current = null;
-  showView('vMap');
+  showView(back);
   setTimeout(maybeShowInstallTip, 600);
 }
 $('scratchBack').addEventListener('click', () => {
@@ -678,9 +680,55 @@ function encodeMask(){
   return {w, h, b64:btoa(bin)};
 }
 
+/* ---------- Keep sealed ---------- */
+// Before the first stroke, a pulled card can be kept unscratched: the set slot fills now, and the payload is
+// rolled only when someone finally scratches it. Any scratching breaks the seal.
+$('scratchKeep').addEventListener('click', () => {
+  if (!current || E.started || E.revealed || !(current.source === 'node' || current.source === 'daily')) return;
+  const ctx = current, card = E.state.card;
+  const firstCopy = !realCards().some(c => c.cardId === card.id);
+  const inst = {id:'c' + Date.now().toString(36) + Math.floor(E.rng()*1e4).toString(36), cardId:card.id, at:new Date().toISOString(),
+    source:ctx.source, node:ctx.node || null, provenance:ctx.provenance || '', sealed:true};
+  collection.push(inst); store.set('collection', collection);
+  if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; store.set('nodes', nodes); } }
+  if (ctx.source === 'daily'){ daily.last = Date.now(); store.set('daily', daily); }
+  const pk = pendKey(ctx); if (pk && pending[pk]){ delete pending[pk]; store.set('pending', pending); }
+  event('card_kept_sealed', {source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank, newSlot:firstCopy});
+  closeScratch(); updateChips();
+  mapNote(`Kept ${card.name} sealed. It's waiting in Collection, under My cards.`, 4000);
+});
+// The seal breaks with the first stroke: hide Keep sealed, and remember it so the card shows as Started.
+$('stage').addEventListener('pointerdown', () => setTimeout(() => {
+  if (!current || !E.started) return;
+  $('scratchKeep').hidden = true;
+  if (current.source === 'sealed'){ const inst = collection.find(c => c.id === current.instId); if (inst && !inst.started){ inst.started = true; store.set('collection', collection); } }
+}, 60));
+function openSealed(inst, fromEl){
+  const card = E.CARDS.find(c => c.id === inst.cardId); if (!card) return;
+  const key = 'sealed:' + inst.id;
+  if (!pending[key]){ pending[key] = {cardId:card.id, at:Date.now()}; store.set('pending', pending); }
+  event('sealed_open', {card:card.id, rank:card.rank, keptFrom:inst.source});
+  openScratch(card, {source:'sealed', instId:inst.id, label:card.name, provenance:inst.provenance, returnTo:'vCollection'}, fromEl, pending[key].progress);
+}
+
 window.Pilot = {
   event,
   onReveal({row, payload:p, card, ctx, pristine}){
+    if (ctx.source === 'sealed'){
+      const inst = collection.find(c => c.id === ctx.instId);
+      if (inst){
+        Object.assign(inst, {sealed:false, started:false, scratchedAt:new Date().toISOString(), grade:p.grade, sigmaW:row.sigmaW, isHolo:p.isHolo,
+          printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken, mask:pristine ? null : encodeMask()});
+        if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
+      }
+      const pk = pendKey(ctx); if (pending[pk]){ delete pending[pk]; store.set('pending', pending); }
+      event('scratch_reveal', {source:'sealed', keptFrom:inst ? inst.source : '', node:inst ? inst.node : null, card:card.id, rank:card.rank, grade:p.grade,
+        computedGrade:row.computedGrade, sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken,
+        durationMs:row.durationMs, strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:false,
+        heldMs:inst ? Date.now() - new Date(inst.at).getTime() : null});
+      updateChips();
+      return;
+    }
     const inst = {
       id:'c' + Date.now().toString(36) + Math.floor(E.rng()*1e4).toString(36), cardId:card.id, at:new Date().toISOString(),
       source:ctx.source || 'debug', node:ctx.node || null, provenance:ctx.provenance || '',
@@ -717,6 +765,8 @@ function updateChips(){
   else { d.textContent = `Next daily in ${fmtLeft(daily.last + DAY - Date.now())}`; d.classList.remove('ready'); }
   const owned = new Set(realCards().map(c => c.cardId)).size;
   $('setChip').textContent = `Harbor Lights ${owned}/${E.CARDS.length}`;
+  const nSealed = realCards().filter(c => c.sealed).length, tab = document.querySelector('.tabs button[data-view="vCollection"]');
+  if (tab) tab.innerHTML = 'Collection' + (nSealed ? `<span class="tab-badge" aria-label="${nSealed} sealed">${nSealed}</span>` : '');
 }
 $('setChip').addEventListener('click', () => showView('vCollection'));
 
@@ -727,11 +777,13 @@ const realCards = () => collection.filter(c => !isTest(c));
 function cardMarkup(card, inst, idx){
   const esc = E.esc;
   const ed = card.run ? `Launch Ed. · Run ${card.run.label} of ${card.run.size}` : 'Launch Ed. · Evergreen';
-  const v = inst ? {holo:inst.isHolo ? 'Holo' : 'Normal', print:inst.printNumber > 0 ? `${inst.printNumber}/${card.run.size}` : 'Evergr.', grade:inst.grade, token:inst.token}
+  const sealed = !!(inst && inst.sealed);
+  const shown = inst && !sealed ? inst : null;   // a sealed card has no payload yet
+  const v = shown ? {holo:inst.isHolo ? 'Holo' : 'Normal', print:inst.printNumber > 0 ? `${inst.printNumber}/${card.run.size}` : 'Evergr.', grade:inst.grade, token:inst.token}
                  : {holo:'?', print:'?', grade:'?', token:'?'};
   const cf = E.STATS.map(k => {
     let track = '', val = '?', broke = false;
-    if (inst){
+    if (shown){
       const g = E.cfGeom(card, k), x = inst.cf[k]; broke = !!(inst.broke && inst.broke[k]);
       track = `<div class="band" style="left:${g.pct(g.lo)}%; width:${g.pct(g.hi) - g.pct(g.lo)}%"></div><div class="mark${broke ? ' broke' : ''}" style="left:${g.pct(x)}%"></div>`;
       val = x.toFixed(1);
@@ -740,13 +792,13 @@ function cardMarkup(card, inst, idx){
   }).join('');
   const prov = inst ? esc(inst.provenance || 'Harbor Lights') : 'Harbor Lights';
   const date = inst ? new Date(inst.at).toLocaleDateString('en-US') : `No. ${card.no}`;
-  const resid = inst && inst.mask ? `<canvas class="resid" data-i="${idx}"></canvas>` : '';
-  return `<div class="card${inst && inst.isHolo ? ' holo' : ''}${inst && isTest(inst) ? ' test' : ''}">
+  const resid = shown && inst.mask ? `<canvas class="resid" data-i="${idx}"></canvas>` : '';
+  return `<div class="card${shown && inst.isHolo ? ' holo' : ''}${inst && isTest(inst) ? ' test' : ''}">
     <div class="topline"><span class="sig"><b>${card.sig[0]}·${card.sig[1]}</b><b>${card.ttt}</b></span><span class="settag">Harbor Lights</span></div>
     <div class="banner"><span class="name">${esc(card.name)}</span><span class="ed">${ed}</span></div>
     <div class="art">${E.artSVG(card)}</div>
-    ${E.pipRow(card.rank, inst ? `<span class="grade-badge shown g-${inst.grade}">${inst.grade}</span>` : '')}
-    <div class="desc${inst ? '' : ' unknown'}${resid ? ' has-resid' : ''}">
+    ${E.pipRow(card.rank, shown ? `<span class="grade-badge shown g-${inst.grade}">${inst.grade}</span>` : '')}
+    <div class="desc${shown ? '' : ' unknown'}${sealed ? ' sealed' + (inst.started ? ' started' : '') : ''}${resid ? ' has-resid' : ''}">
       <div class="desc-grid">
         <div class="slot"><span class="lbl">Finish</span><span class="val">${v.holo}</span></div>
         <div class="slot"><span class="lbl">Print</span><span class="val">${v.print}</span></div>
@@ -779,7 +831,7 @@ function paintResidue(cv, mask){
 /* ================= Collection view ================= */
 let colMode = 'cat', shown = [];
 function bestCopy(list){
-  return list.slice().sort((a, b) => (GRADE_ORDER[a.grade] - GRADE_ORDER[b.grade]) || (b.isHolo - a.isHolo) || ((a.printNumber > 0 ? a.printNumber : 1e9) - (b.printNumber > 0 ? b.printNumber : 1e9)))[0];
+  return list.slice().sort((a, b) => ((a.sealed ? 1 : 0) - (b.sealed ? 1 : 0)) || (GRADE_ORDER[a.grade] - GRADE_ORDER[b.grade]) || (b.isHolo - a.isHolo) || ((a.printNumber > 0 ? a.printNumber : 1e9) - (b.printNumber > 0 ? b.printNumber : 1e9)))[0];
 }
 function tileCap(card, inst, right){
   return `<div class="tile-cap"><b>${E.esc(card.name)}</b><span class="tags">${right}</span></div>`;
@@ -800,14 +852,23 @@ function renderCollection(){
       const mine = real.filter(c => c.cardId === card.id);
       if (mine.length){
         const inst = bestCopy(mine);
-        html += tile(card, inst, holoTag(inst) + (mine.length > 1 ? `<span class="count">×${mine.length}</span>` : ''), `${card.name}, ${mine.length} owned`);
+        html += tile(card, inst, (inst.sealed ? '<span class="seal-tag">Sealed</span>' : holoTag(inst)) + (mine.length > 1 ? `<span class="count">×${mine.length}</span>` : ''), `${card.name}, ${mine.length} owned`);
       } else {
         html += `<div class="tile slot-empty" aria-label="Empty slot ${card.no}">${cardMarkup(card, null, -1)}<div class="tile-cap"><b>No. ${card.no}</b><span class="tags">${E.RANKS[card.rank - 1]}</span></div></div>`;
       }
     }
   } else {
     if (!real.length) html += '<p class="empty-note">No cards yet. Walk to a node on the map, or claim your daily card.</p>';
-    for (const inst of real.slice().reverse()){
+    const sealed = real.filter(c => c.sealed);
+    if (sealed.length){
+      html += `<h2 class="group-head first">Sealed <span>${sealed.length}</span></h2><p class="group-note">Tap one to scratch it. What's under the panel isn't decided until you do.</p>`;
+      for (const inst of sealed.slice().reverse()){
+        const card = E.CARDS.find(c => c.id === inst.cardId); if (!card) continue;
+        html += tile(card, inst, `<span class="seal-tag">${inst.started ? 'Started' : 'Sealed'}</span>`, `Sealed ${card.name}, tap to scratch`);
+      }
+      if (real.length > sealed.length) html += `<h2 class="group-head">Scratched <span>${real.length - sealed.length}</span></h2>`;
+    }
+    for (const inst of real.filter(c => !c.sealed).slice().reverse()){
       const card = E.CARDS.find(c => c.id === inst.cardId); if (!card) continue;
       html += tile(card, inst, holoTag(inst) + `<span class="g-${inst.grade}">${inst.grade}</span>`, `${card.name}, ${inst.isHolo ? 'holo, ' : ''}${inst.grade}`);
     }
@@ -824,7 +885,11 @@ function renderCollection(){
   event('view', {view:colMode === 'cat' ? 'set' : 'my_cards', owned, cards:real.length, testCards:tests.length});
   $('testerCode').textContent = P.tester || testerId;
 }
-$('colGrid').addEventListener('click', e => { const t = e.target.closest('button.tile'); if (t) openInspect(shown[+t.dataset.i]); });
+$('colGrid').addEventListener('click', e => {
+  const t = e.target.closest('button.tile'); if (!t) return;
+  const inst = shown[+t.dataset.i];
+  if (inst && inst.sealed) openSealed(inst, t.querySelector('.card')); else openInspect(inst);
+});
 function setSeg(mode){ colMode = mode; $('segCat').setAttribute('aria-selected', mode === 'cat'); $('segAll').setAttribute('aria-selected', mode === 'all'); renderCollection(); }
 $('segCat').addEventListener('click', () => setSeg('cat'));
 $('segAll').addEventListener('click', () => setSeg('all'));

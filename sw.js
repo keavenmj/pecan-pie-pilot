@@ -1,10 +1,10 @@
 /* Pecan Pie service worker: keeps the app's own files on the phone so it opens instantly and on a weak signal.
    Only same-origin files are handled. Map tiles, OpenStreetMap lookups and logging always go to the network. */
-const CACHE = 'pecan-shell-v1.6';
+const CACHE = 'pecan-shell-v1.7';
 const SHELL = [
   './', 'index.html', 'guide.html', 'manifest.webmanifest',
-  'css/engine.css?v=1.6', 'css/pilot.css?v=1.6',
-  'js/mapstyle.js?v=1.6', 'js/engine.js?v=1.6', 'js/pilot.js?v=1.6', 'js/config.js',
+  'css/engine.css?v=1.7', 'css/pilot.css?v=1.7',
+  'js/mapstyle.js?v=1.7', 'js/engine.js?v=1.7', 'js/pilot.js?v=1.7', 'js/config.js',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
   'vendor/maplibre/maplibre-gl.js', 'vendor/maplibre/maplibre-gl.css', 'vendor/maplibre/leaflet-maplibre-gl.js',
   'icons/icon-192.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'
