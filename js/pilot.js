@@ -31,7 +31,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '0.6';
+const APP_V = '0.7';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -516,13 +516,17 @@ function updateSheet(){
   else sub += `${fmtDist(info.d)} away. Walk within ${P.reach} m to scratch.`;
   $('nsDist').textContent = sub;
   btn.disabled = info.st !== 'inrange';
+  const started = pending['node:' + n.id] && pending['node:' + n.id].progress;
+  btn.textContent = started ? 'Finish scratching' : 'Scratch';
+  if (started && info.st !== 'cooling') $('nsDist').textContent = 'You started a card here. ' + sub;
 }
 $('nsClose').addEventListener('click', closeSheet);
 $('nsScratch').addEventListener('click', () => {
   const n = sheetNode; if (!n || nodeInfo(n).st !== 'inrange') return;
   const m = markers.get(n.id), tok = m && m.getElement() ? m.getElement().querySelector('.tok') : null;
   closeSheet();
-  openScratch(drawCard(), {source:'node', node:n.id, label:n.name, provenance:n.prov || `First pulled at ${n.name}`}, tok);
+  const key = 'node:' + n.id, card = pendingCard(key);
+  openScratch(card, {source:'node', node:n.id, label:n.name, provenance:n.prov || `First pulled at ${n.name}`}, tok, pending[key].progress);
   event('node_scratch', {node:n.id, src:n.src, kind:n.kind});
 });
 
@@ -537,8 +541,38 @@ function drawCard(){
 }
 
 /* ================= Scratch flow ================= */
+/* A node's or the daily card's identity is fixed the first time it's opened, and any scratch progress is saved
+   when the player leaves, so backing out never re-rolls the card and coming back resumes the same scratch. */
+let pending = store.get('pending', {});
+const pendKey = ctx => ctx.source === 'node' ? 'node:' + ctx.node : ctx.source === 'daily' ? 'daily' : null;
+function pendingCard(key){
+  const p = pending[key], c = p && E.CARDS.find(c => c.id === p.cardId);
+  if (c) return c;
+  const card = drawCard();
+  pending[key] = {cardId:card.id, at:Date.now()}; store.set('pending', pending);
+  return card;
+}
+function snapshotProgress(){
+  const st = E.state, m = st.mask; if (!m) return null;
+  const b = new Uint8Array(m.length); for (let i = 0; i < m.length; i++) b[i] = Math.round(m[i]*255);
+  let bin = ''; for (let i = 0; i < b.length; i += 4096) bin += String.fromCharCode.apply(null, b.subarray(i, i + 4096));
+  return {mw:st.mw, mh:st.mh, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs,
+    elapsed:st.firstT ? Math.round((st.lastMoveT || performance.now()) - st.firstT) : 0};
+}
+function restoreProgress(pr){
+  const st = E.state; if (!pr || !st.mask) return;
+  const bin = atob(pr.mask), m = st.mask;
+  for (let y = 0; y < st.mh; y++) for (let x = 0; x < st.mw; x++){
+    const sx = Math.min(pr.mw - 1, Math.floor(x*pr.mw/st.mw)), sy = Math.min(pr.mh - 1, Math.floor(y*pr.mh/st.mh));
+    m[y*st.mw + x] = bin.charCodeAt(sy*pr.mw + sx)/255;
+  }
+  st.strokes = pr.strokes || 0; st.pathLen = pr.pathLen || 0; st.drawMs = pr.drawMs || 0;
+  st.firstT = performance.now() - (pr.elapsed || 0);
+  st.maskDirty = true; st.dirty = true;
+  $('hint').textContent = 'Picking up where you left off.';
+}
 let current = null;
-function openScratch(card, ctx, fromEl){
+function openScratch(card, ctx, fromEl, progress){
   current = ctx;
   const motionOk = !matchMedia('(prefers-reduced-motion: reduce)').matches;
   const fromRect = fromEl && motionOk ? fromEl.getBoundingClientRect() : null;
@@ -547,7 +581,8 @@ function openScratch(card, ctx, fromEl){
   $('scratchDone').hidden = true; $('scratchBack').hidden = false;
   $('vScratch').scrollTop = 0;
   E.newCard(card, ctx);
-  event('scratch_open', {source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank});
+  if (progress) restoreProgress(progress);
+  event('scratch_open', {source:ctx.source, node:ctx.node || null, card:card.id, rank:card.rank, resumed:!!progress});
   if (fromRect && fromRect.width) flyIn(fromRect, ctx.source === 'node');
 }
 
@@ -594,9 +629,13 @@ function closeScratch(){
   showView('vMap');
 }
 $('scratchBack').addEventListener('click', () => {
-  if (E.revealed) return closeScratch();
-  if (E.started){ $('hint').textContent = 'Finish scratching this card first. It’s already yours.'; return; }
-  event('scratch_abandon', {source:current && current.source});
+  if (E.revealed || E.sequenceRunning) return closeScratch();
+  const key = current && pendKey(current);
+  if (key && pending[key]){
+    if (E.started){ const pr = snapshotProgress(); if (pr) pending[key].progress = pr; }
+    store.set('pending', pending);
+  }
+  event('scratch_leave', {source:current && current.source, started:E.started, coverage:+(E.state.cells ? Array.from(E.state.cells).reduce((a, b) => a + b, 0)/64 : 0).toFixed(3)});
   closeScratch();
 });
 $('scratchDone').addEventListener('click', closeScratch);
@@ -630,6 +669,7 @@ window.Pilot = {
     if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
     if (ctx.source === 'node' && nodes){ const n = nodes.find(n => n.id === ctx.node); if (n){ n.coolUntil = Date.now() + P.cool*3600e3; store.set('nodes', nodes); } }
     if (ctx.source === 'daily'){ daily.last = Date.now(); store.set('daily', daily); }
+    const pk = pendKey(ctx); if (pk && pending[pk]){ delete pending[pk]; store.set('pending', pending); }
     const place = ctx.source === 'node' && nodes ? nodes.find(n => n.id === ctx.node) : null;
     const lowPrint = !!(card.run && p.printNumber > 0 && p.printNumber <= Math.max(3, Math.ceil(card.run.size*.02)));
     event('scratch_reveal', {source:inst.source, node:inst.node, placeSrc:place ? place.src : '', placeKind:place ? place.kind : '', lowPrint, card:card.id, rank:card.rank, grade:p.grade, computedGrade:row.computedGrade,
@@ -646,11 +686,12 @@ const dailyReady = () => Date.now() - daily.last >= DAY;
 $('dailyBtn').addEventListener('click', () => {
   if (!dailyReady()) return;
   event('daily_open');
-  openScratch(drawCard(), {source:'daily', label:'Daily card', provenance:'Daily card'}, $('dailyBtn'));
+  const card = pendingCard('daily');
+  openScratch(card, {source:'daily', label:'Daily card', provenance:'Daily card'}, $('dailyBtn'), pending.daily.progress);
 });
 function updateChips(){
   const d = $('dailyBtn');
-  if (dailyReady()){ d.textContent = 'Daily card ready'; d.classList.add('ready'); }
+  if (dailyReady()){ d.textContent = pending.daily && pending.daily.progress ? 'Finish daily card' : 'Daily card ready'; d.classList.add('ready'); }
   else { d.textContent = `Next daily in ${fmtLeft(daily.last + DAY - Date.now())}`; d.classList.remove('ready'); }
   const owned = new Set(realCards().map(c => c.cardId)).size;
   $('setChip').textContent = `Harbor Lights ${owned}/${E.CARDS.length}`;
