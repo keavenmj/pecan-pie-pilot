@@ -31,7 +31,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '0.4';
+const APP_V = '0.5';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -109,6 +109,7 @@ function fmtLeft(ms){
 
 /* ================= Map ================= */
 const map = L.map('map', {zoomControl:false, attributionControl:true}).setView([DEFAULT_CENTER.lat, DEFAULT_CENTER.lng], 17);
+map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
 /* Base map: our dark vector style on OpenFreeMap tiles. If the phone has no WebGL, or the style
    can't load within ten seconds, fall back to OpenStreetMap's raster tiles, darkened with CSS. */
 let baseLayer = null, baseMode = 'none';
@@ -127,12 +128,9 @@ function useVector(){
   if (!window.maplibregl || !L.maplibreGL || !window.PECAN_MAPSTYLE || !hasWebGL()) return useRaster(hasWebGL() ? 'missing_library' : 'no_webgl');
   let ok = false;
   baseLayer = L.maplibreGL({style:window.PECAN_MAPSTYLE, interactive:false});
-  // Both tile sources (streets and labels) carry the same credit; list each credit once.
-  baseLayer.getAttribution = function(){
-    const m = this._glMap, st = m && m.getStyle();
-    if (!st || !st.sources) return '';
-    return [...new Set(Object.keys(st.sources).map(id => { const src = m.getSource(id); return src && typeof src.attribution === 'string' ? src.attribution.trim() : ''; }).filter(Boolean))].join(', ');
-  };
+  // One short credit line that still names and links all three required parties. (The bridge would otherwise
+  // join the long credit from both tile sources, which doubles it and wraps onto two lines on a phone.)
+  baseLayer.getAttribution = () => '&copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
   baseLayer.addTo(map);
   baseMode = 'vector';
   const gl = baseLayer.getMaplibreMap();
