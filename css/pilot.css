@@ -129,19 +129,10 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
   border-block: .7cqw solid #1B2632; box-shadow: 0 1px 4px rgba(0,0,0,.4); pointer-events: none; }
 
 /* ---------- Holo foil ----------
-   A fine rainbow sheen over the frame and art (never the values), plus a moving glint
-   on a single card. The grid shows the sheen only, so a row of cards doesn't flicker. */
-.foil { mix-blend-mode: overlay; animation: none !important; background-size: auto;
-  background: repeating-linear-gradient(115deg, rgba(255,90,170,.42) 0 1.2cqw, rgba(255,215,90,.42) 1.2cqw 2.4cqw, rgba(90,240,180,.42) 2.4cqw 3.6cqw, rgba(90,170,255,.42) 3.6cqw 4.8cqw, rgba(190,120,255,.42) 4.8cqw 6cqw);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 var(--foil-cut, 56%), transparent calc(var(--foil-cut, 56%) + .5%));
-  mask-image: linear-gradient(to bottom, #000 0, #000 var(--foil-cut, 56%), transparent calc(var(--foil-cut, 56%) + .5%)); }
-.card.holo .foil { opacity: .65; }
-.foil::after { content: ""; position: absolute; inset: 0; opacity: 0; mix-blend-mode: screen; background-size: 300% 300%;
-  background-image: linear-gradient(115deg, transparent 38%, rgba(255,255,255,.7) 50%, transparent 62%); }
-.card.holo .foil::after { opacity: 1; animation: glint 3.4s ease-in-out infinite; }
-.tile .card.holo .foil::after { animation: none; opacity: 0; }
-@keyframes glint { 0% { background-position: 100% 100%; } 60%, 100% { background-position: 0% 0%; } }
-@media (prefers-reduced-motion: reduce) { .card.holo .foil::after { animation: none; opacity: 0; } }
+   The original cascading rainbow (engine.css) runs over the frame, borders and art. The values panel sits
+   above the foil layer, so the shimmer never covers the numbers or the scratch surface. */
+.card .foil { z-index: 1; }
+.card .desc { z-index: 2; }
 
 /* ---------- Scratch transition: the token flies into the card ---------- */
 .flyer { position: fixed; z-index: 2000; pointer-events: none; transform-origin: 50% 50%; will-change: transform, opacity; }
