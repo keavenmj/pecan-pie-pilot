@@ -4,7 +4,7 @@
 
 - **Events:** every event, one row each, with any extra details as JSON in the last column.
 - **Scratches:** one row per card revealed, with grade, σ, holo, print number, ceiling breaks, scratch time, stroke speed, and where the card came from.
-- **Summary:** refreshed every hour, or on demand from the **Pecan Pie** menu. It shows retention by day since first open, daily activity, cards per session, condition grades by rank, care by rank, card sources, and outlier counts. Test cards from the Debug tab are left out.
+- **Summary:** written by the script as plain numbers, not formulas. It refreshes on its own as events arrive (at most once every five minutes), hourly as a backup, and on demand from the **Pecan Pie** menu. It shows retention by day since first open, daily activity, cards per session, condition grades by rank, care by rank, card sources, and outlier counts. Test cards from the Debug tab are left out.
 
 ## Setup (about five minutes)
 
@@ -24,6 +24,7 @@ To check it's running, open the URL in a browser. It should say "Pecan Pie log r
 
 ## Notes
 
+- **Summary shows zeroes:** it was written before any data arrived. Use **Pecan Pie › Refresh summary**; the menu appears after reloading the Sheet.
 - **Updating the script:** after editing `Code.gs`, use **Deploy › Manage deployments**, edit the existing deployment, and choose **New version**. Keep the same URL so the app doesn't need changing.
 - **Privacy:** events carry a random tester code (shown at the bottom of the Collection screen), the tester's local date, and gameplay details. No coordinates or personal information are sent.
 - **Abuse:** the endpoint is public, since the app is a public web page. The script caps payload size and batch length, drops repeated events, and stops text from being read as a spreadsheet formula. For a 20 to 30 person pilot that's enough. Anything larger should move to a real backend with authentication.

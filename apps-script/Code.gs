@@ -11,6 +11,7 @@ const SCRATCH_COLS = ['received_at', 'at', 'day', 'tester', 'session', 'source',
   'computed_grade', 'sigma_w', 'holo', 'print', 'low_print', 'broke', 'token', 'duration_ms', 'strokes', 'speed_px_s', 'coverage', 'new_slot', 'fx'];
 const META_KEYS = ['at', 'day', 'tester', 'session', 'type', 'id', 'app', 'platform', 'standalone'];
 const MAX_BODY = 300000, MAX_EVENTS = 200;
+const SUMMARY_EVERY_SEC = 300;   // refresh the Summary as events arrive, at most once every five minutes
 const RANKS = ['Common', 'Uncommon', 'Rare', 'Legendary', 'Mythic'];
 const GRADES = ['Pristine', 'Good', 'Fair', 'Poor'];
 
@@ -55,6 +56,7 @@ function doPost(e) {
     const put = {};
     evs.forEach(function (x) { if (x.id) put['e:' + x.id] = '1'; });
     if (Object.keys(put).length) cache.putAll(put, 21600);
+    maybeRefreshSummary_(cache);
     return out_('ok');
   } catch (err) {
     return out_('error');
@@ -62,6 +64,16 @@ function doPost(e) {
 }
 
 function doGet() { return out_('Pecan Pie log receiver is running.'); }
+
+// Keep the Summary current without slowing every delivery: refresh only if five minutes have passed.
+// A failure here never affects logging; the hourly trigger and the menu still work.
+function maybeRefreshSummary_(cache) {
+  try {
+    if (cache.get('summary:recent')) return;
+    cache.put('summary:recent', '1', SUMMARY_EVERY_SEC);
+    refreshSummary();
+  } catch (err) {}
+}
 
 /* ---------------- Setup ---------------- */
 
@@ -82,6 +94,12 @@ function onOpen() {
 /* ---------------- Summary ---------------- */
 
 function refreshSummary() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return;               // another refresh or a large delivery is running; skip this one
+  try { buildSummary_(); } finally { lock.releaseLock(); }
+}
+
+function buildSummary_() {
   const ss = SpreadsheetApp.getActive();
   const ev = rows_(ss.getSheetByName('Events'));
   const sc = rows_(ss.getSheetByName('Scratches')).filter(function (r) { return r.source !== 'debug'; });   // test cards don't count
