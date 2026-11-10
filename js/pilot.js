@@ -46,7 +46,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '1.8';
+const APP_V = '1.9';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -725,7 +725,7 @@ window.Pilot = {
       event('scratch_reveal', {source:'sealed', instId:ctx.instId, keptFrom:inst ? inst.source : '', node:inst ? inst.node : null, card:card.id, rank:card.rank, grade:p.grade,
         computedGrade:row.computedGrade, sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken,
         durationMs:row.durationMs, strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:false,
-        heldMs:inst ? Date.now() - new Date(inst.at).getTime() : null});
+        heldMs:inst ? Date.now() - new Date(inst.at).getTime() : undefined});
       updateChips();
       return;
     }
@@ -766,7 +766,8 @@ function updateChips(){
   const owned = new Set(realCards().map(c => c.cardId)).size;
   $('setChip').textContent = `Harbor Lights ${owned}/${E.CARDS.length}`;
   const nSealed = realCards().filter(c => c.sealed).length, tab = document.querySelector('.tabs button[data-view="vCollection"]');
-  if (tab) tab.innerHTML = 'Collection' + (nSealed ? `<span class="tab-badge" aria-label="${nSealed} sealed">${nSealed}</span>` : '');
+  // Only touch the tab when the count changes: rebuilding it every second could swallow a tap in progress.
+  if (tab && tab.dataset.sealed !== String(nSealed)){ tab.dataset.sealed = String(nSealed); tab.innerHTML = 'Collection' + (nSealed ? `<span class="tab-badge" aria-label="${nSealed} sealed">${nSealed}</span>` : ''); }
 }
 $('setChip').addEventListener('click', () => showView('vCollection'));
 

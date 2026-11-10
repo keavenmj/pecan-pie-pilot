@@ -190,7 +190,8 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 .grade-badge.g-Fair { color: #D9B347; } .grade-badge.g-Poor { color: #E77C69; }
 
 /* ---------- Sealed cards ---------- */
-.scratch-top #scratchKeep { margin-left: auto; }
+.scratch-top #scratchKeep { margin-left: auto; flex-shrink: 0; }
+.scratch-top .scratch-where { flex: 1 1 auto; }
 .desc.sealed::after { content: "SEALED"; position: absolute; inset: 0; z-index: 3; display: grid; place-items: center;
   font-family: var(--font-display); font-weight: 700; font-size: 5cqw; letter-spacing: .25em; color: rgba(30,38,48,.5);
   background: repeating-linear-gradient(115deg, rgba(255,255,255,.08) 0 .4cqw, transparent .4cqw 1.2cqw), linear-gradient(135deg, #B9BEC4, #E2E5E8 45%, #C9CDD2 55%, #A7ADB4); }

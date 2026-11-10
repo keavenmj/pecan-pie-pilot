@@ -236,7 +236,7 @@ function sealedBlocks_(ev, sc) {
     let d = {}; try { d = JSON.parse(r.data || '{}'); } catch (e) {}
     const at = r.at instanceof Date ? r.at.getTime() : NaN;
     if (r.type === 'card_kept_sealed') kept.push({id: d.instId || '', tester: r.tester, rank: Number(d.rank), newSlot: d.newSlot === true, at: at});
-    else if (d.source === 'sealed' && d.instId) later[d.instId] = {at: at, heldMs: Number(d.heldMs)};
+    else if (d.source === 'sealed' && d.instId) later[d.instId] = {at: at, heldMs: typeof d.heldMs === 'number' ? d.heldMs : NaN};   // missing means fall back to timestamps
   });
   // Pulls = every card taken from a node or the daily, whether scratched on the spot or kept sealed.
   const scratchedOnSpot = sc.filter(function (r) { return r.source === 'node' || r.source === 'daily'; });
