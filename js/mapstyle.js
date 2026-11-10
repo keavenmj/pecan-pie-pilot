@@ -22,7 +22,7 @@ window.PECAN_MAPSTYLE = {
   // Labels read the same tiles through a second source. If fonts fail to load, MapLibre drops every tile
   // from a source that has labels, so keeping labels separate means a font failure only costs the labels.
   sources: {
-    omt: {type:'vector', url:'https://tiles.openfreemap.org/planet', attribution:'<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'},
+    omt: {type:'vector', url:'https://tiles.openfreemap.org/planet'},
     omtLabels: {type:'vector', url:'https://tiles.openfreemap.org/planet'}
   },
   glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
