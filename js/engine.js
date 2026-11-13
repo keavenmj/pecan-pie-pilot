@@ -1058,7 +1058,12 @@ const Sound = (() => {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function renderSlab(row, p){
   const card = state.card;
-  const cfLines = STATS.map(k => {
+  // Race copies keep one Chance Factor: show the winner on the card's shared range, and the three it beat on one line.
+  const cfLines = p.race ? (() => { const w = p.race.winner, [lo, hi] = raceRange(card), b = p.broke[w];
+      const rest = STATS.filter(k => k !== w).sort((a, c) => p.chanceFactors[c] - p.chanceFactors[a]).map(k => `${STAT_LABEL[k]} ${p.chanceFactors[k].toFixed(1)}`).join(', ');
+      return `<dt>${RNAME[w]}</dt><dd>${p.chanceFactors[w].toFixed(1)} <span style="color:var(--muted)">(${lo}–${hi})</span>${b ? ` <span class="flag">broke the ${b}</span>` : ''}</dd>
+        <dt>Race</dt><dd><span style="color:var(--muted)">Won over ${rest}${p.race.photo ? ', photo finish' : ''}</span></dd>${p.die ? `<dt>Die</dt><dd>${RANKS[p.die.rank - 1]} ${dieName(p.die.rank)}, +${p.die.total}</dd>` : ''}`; })()
+    : STATS.map(k => {
     const [lo, hi] = card.cf[k], b = p.broke[k];
     return `<dt>${k[0].toUpperCase() + k.slice(1)}</dt><dd>${p.chanceFactors[k].toFixed(1)} <span style="color:var(--muted)">(${lo}–${hi})</span>${b ? ` <span class="flag">broke the ${b}</span>` : ''}</dd>`;
   }).join('');

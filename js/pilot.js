@@ -1192,6 +1192,20 @@ function tileCap(card, inst, right){
   return `<div class="tile-cap"><b>${E.esc(card.name)}</b><span class="tags">${right}</span></div>`;
 }
 const holoTag = inst => inst.isHolo ? '<span class="holo-tag">Holo</span>' : '';
+/* ---------- Versions (Chance Factor race) ----------
+   With the race on, each copy keeps one Chance Factor, so each card comes in four versions: Prob, Luck, Entr, Var.
+   The Set still counts 12 designs; versions are a second layer shown as chips under each card. */
+const versionsOn = () => !!E.settings.fxRace;
+const raceCopies = cardId => realCards().filter(c => c.cardId === cardId && c.race && !c.sealed);
+const isGoldCopy = (c, card) => c.cf[c.race.winner] > card.cf.probability[1];
+function versionState(card){
+  const st = {}; E.STATS.forEach(k => { const cs = raceCopies(card.id).filter(c => c.race.winner === k); st[k] = !cs.length ? '' : cs.some(c => isGoldCopy(c, card)) ? 'gold' : 'own'; });
+  return st;
+}
+function bestOfVersion(card, k){
+  return raceCopies(card.id).filter(c => c.race.winner === k).sort((a, b) => (isGoldCopy(b, card) - isGoldCopy(a, card)) || (GRADE_ORDER[a.grade] - GRADE_ORDER[b.grade]) || (b.cf[k] - a.cf[k]))[0];
+}
+const versionChips = (card, cls) => { const st = versionState(card); return `<div class="vchips${cls ? ' ' + cls : ''}">${E.STATS.map(k => `<span class="${st[k] ? 'own ' + st[k] : ''}" data-v="${k}">${E.STAT_LABEL[k]}</span>`).join('')}</div>`; };
 function renderCollection(){
   const grid = $('colGrid'), cards = E.CARDS.slice().sort((a, b) => a.no - b.no);
   grid.classList.toggle('bingo-mode', colMode === 'bingo' || colMode === 'dice'); $('setFilterRow').hidden = colMode === 'bingo' || colMode === 'dice';
@@ -1202,8 +1216,8 @@ function renderCollection(){
   $('segAll').textContent = `Cards ${real.length}`;
   shown = [];
   let html = '';
-  const tile = (card, inst, right, label) => { const i = shown.push(inst) - 1;
-    return `<button class="tile" type="button" data-i="${i}" aria-label="${E.esc(label)}">${cardMarkup(card, inst, i)}${tileCap(card, inst, right)}</button>`; };
+  const tile = (card, inst, right, label, extra) => { const i = shown.push(inst) - 1;
+    return `<button class="tile" type="button" data-i="${i}" aria-label="${E.esc(label)}">${cardMarkup(card, inst, i)}${tileCap(card, inst, right)}${extra || ''}</button>`; };
   if (colMode === 'dice'){
     $('segCat').textContent = `Set ${owned}/${cards.length}`; $('segAll').textContent = `Cards ${real.length}`;
     grid.innerHTML = diceMarkup(); updateDiceChip();
@@ -1219,13 +1233,19 @@ function renderCollection(){
     return;
   }
   if (colMode === 'cat'){
+    const vOn = versionsOn();
+    if (vOn){
+      const owned = cards.reduce((n, c) => n + Object.values(versionState(c)).filter(Boolean).length, 0);
+      html += `<p class="vhead">Versions <b>${owned}/${cards.length*4}</b> · each card comes in Prob, Luck, Entr and Var</p>
+        <p class="vlegend"><span><i class="own"></i>Owned</span><span><i class="gold"></i>Owned with a gold stat</span><span><i></i>Not yet</span></p>`;
+    }
     for (const card of cards){
       const mine = real.filter(c => c.cardId === card.id);
       if (mine.length){
         const inst = bestCopy(mine);
-        html += tile(card, inst, (inst.sealed ? '<span class="seal-tag">Sealed</span>' : holoTag(inst)) + (mine.length > 1 ? `<span class="count">×${mine.length}</span>` : ''), `${card.name}, ${mine.length} owned`);
+        html += tile(card, inst, (inst.sealed ? '<span class="seal-tag">Sealed</span>' : holoTag(inst)) + (mine.length > 1 ? `<span class="count">×${mine.length}</span>` : ''), `${card.name}, ${mine.length} owned`, vOn ? versionChips(card) : '');
       } else {
-        html += `<div class="tile slot-empty" aria-label="Empty slot ${card.no}">${cardMarkup(card, null, -1)}<div class="tile-cap"><b>No. ${card.no}</b><span class="tags">${E.RANKS[card.rank - 1]}</span></div></div>`;
+        html += `<div class="tile slot-empty" aria-label="Empty slot ${card.no}">${cardMarkup(card, null, -1)}<div class="tile-cap"><b>No. ${card.no}</b><span class="tags">${E.RANKS[card.rank - 1]}</span></div>${vOn ? versionChips(card) : ''}</div>`;
       }
     }
   } else {
@@ -1277,6 +1297,10 @@ function openInspect(inst){
   if (!inst) return;
   const card = E.CARDS.find(c => c.id === inst.cardId);
   $('inspect').hidden = false;
+  const vs = $('inspVersions'), showV = versionsOn() && raceCopies(card.id).length && !isTest(inst);
+  vs.hidden = !showV;
+  if (showV){ vs.innerHTML = `<span class="vlabel">Your best of each version</span>` + versionChips(card, 'big');
+    vs.querySelectorAll('[data-v]').forEach(el => el.classList.toggle('current', !!(inst.race && inst.race.winner === el.dataset.v))); vs.dataset.card = card.id; }
   $('inspCard').innerHTML = cardMarkup(card, inst, 0);
   const cv = $('inspCard').querySelector('canvas.resid');
   if (cv) paintResidue(cv, inst.mask);
@@ -1304,6 +1328,11 @@ function openInspect(inst){
 }
 function closeInspect(){ $('inspect').hidden = true; $('inspCard').innerHTML = ''; }
 $('inspClose').addEventListener('click', closeInspect);
+$('inspVersions').addEventListener('click', e => {
+  const el = e.target.closest('[data-v]'); if (!el || !el.classList.contains('own')) return;
+  const card = E.CARDS.find(c => c.id === $('inspVersions').dataset.card), best = card && bestOfVersion(card, el.dataset.v);
+  if (best){ openInspect(best); event('version_view', {card:card.id, version:el.dataset.v}); }
+});
 $('inspect').addEventListener('click', e => { if (e.target === $('inspect')) closeInspect(); });
 
 /* ================= Views ================= */
