@@ -601,7 +601,6 @@ function tick(){
     drawHeat();
     state.tension = settings.fxTension ? clamp((st.meanU/(settings.threshold/100) - .75)/.25, 0, 1) : 0;
     applyTension(state.tension);
-    if (state.race) raceAdvance(Math.min(1, st.meanU/(settings.threshold/100)));
     if (st.meanU >= settings.threshold/100) resolve(st);
   }
   if (cardEl){
@@ -648,71 +647,62 @@ function drawHeat(){
   }
 }
 
-/* ================= Live race (experimental: Feel › Live race) =================
-   The four Chance Factors share one range and climb as the panel is scratched: progress is coverage over the
-   reveal line, so stopping pauses them. Each stat's speed is drawn as it goes (nothing is decided early). At the
-   reveal line each stat gets one last random kick, the highest takes the card, and the other three crumble. */
-const RACE = {climb:15, shape:2.2, seg:.25, kick:6, kickShape:1.2, width:42};   // tuned on a Rare card (range width 42); scaled per card
-const raceScale = card => { const [lo, hi] = raceRange(card); return (hi - lo)/RACE.width; };
+/* ================= Chance Factor race (experimental: Feel › Chance Factor race) =================
+   All four Chance Factors share one range per card and are rolled together at the reveal line, like every other
+   value. Once the coating locks, any residue lifts and the four race up to their values in full view; the highest
+   takes the card, the other three crumble, and the single surviving stat fills the panel. The swings during the
+   race are presentation, like the print number rolling; the result was fixed at the reveal. */
 const RNAME = {probability:'Probability', luck:'Luck', entropy:'Entropy', variance:'Variance'};
 const raceRange = card => card.cf.probability;                 // equal ranges: all four use one range per card
-function gammaRand(k, th){
-  if (k < 1) return gammaRand(k + 1, th)*Math.pow(rng(), 1/k);
-  const d = k - 1/3, c = 1/Math.sqrt(9*d);
-  for (;;){ let x, v; do { const u1 = rng() || 1e-9, u2 = rng(); x = Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2); v = 1 + c*x; } while (v <= 0);
-    v = v*v*v; const u = rng(); if (u < 1 - .0331*x*x*x*x || Math.log(u) < .5*x*x + d*(1 - v + Math.log(v))) return d*v*th; }
-}
 const raceGeom = card => { const [lo, hi, fz] = raceRange(card), min = lo - fz*1.6, max = hi + fz*1.6; return {lo, hi, pct:x => clamp((x - min)/(max - min)*100, 0, 100)}; };
 function raceLanesHTML(card){
   const g = raceGeom(card);
-  return `<div class="race" id="race"><span class="photo" id="racePhoto">Photo finish</span>${STATS.map(k => `<div class="lane" data-k="${k}"><span class="lbl">${STAT_LABEL[k]}</span><div class="tr"><div class="band" style="left:${g.pct(g.lo)}%;width:${g.pct(g.hi) - g.pct(g.lo)}%"></div><div class="ceil" style="left:${g.pct(g.hi)}%"></div><div class="fill" style="width:${g.pct(g.lo)}%"></div></div><span class="v">${g.lo.toFixed(1)}</span></div>`).join('')}</div>`;
+  return `<div class="race" id="race"><span class="photo" id="racePhoto">Photo finish</span>${STATS.map(k => `<div class="lane" data-k="${k}"><span class="lbl">${STAT_LABEL[k]}</span><div class="tr"><div class="band" style="left:${g.pct(g.lo)}%;width:${g.pct(g.hi) - g.pct(g.lo)}%"></div><div class="ceil" style="left:${g.pct(g.hi)}%"></div><div class="fill" style="width:0"></div></div><span class="v">?</span></div>`).join('')}</div>`;
 }
 function soloHTML(card, k, v, cls){
   const g = raceGeom(card), gold = v > g.hi;
   return `<div class="solo${gold ? ' gold' : ''}${cls ? ' ' + cls : ''}" data-k="${k}"><div class="name">${RNAME[k]}</div><div class="val">${v.toFixed(1)}</div><div class="trk"><div class="band" style="left:${g.pct(g.lo)}%;width:${g.pct(g.hi) - g.pct(g.lo)}%"></div><div class="mk" style="left:${g.pct(v)}%"></div></div><div class="rng">Range ${g.lo}–${g.hi}</div></div>`;
 }
-function raceNew(card){ const lo = raceRange(card)[0], v = {}; STATS.forEach(k => { v[k] = lo; }); return {p:0, v, speed:{}, next:{}, lead:null, changes:0}; }
 const raceLeader = v => STATS.reduce((a, b) => v[b] > v[a] ? b : a);
-function raceAdvance(p){
-  const R = state.race; if (!R || p <= R.p) return;
+// The same roll as today, with all four stats on the card's shared range.
+function raceRoll(card, bonus){
+  const [lo, hi, fz] = raceRange(card), cf = {}, broke = {};
   for (const k of STATS){
-    let from = R.p;
-    while (from < p){
-      if (R.speed[k] == null || from >= R.next[k]){ R.speed[k] = gammaRand(RACE.shape, RACE.climb*raceScale(state.card)/RACE.shape); R.next[k] = from + (-RACE.seg*Math.log(1 - rng())); }
-      const to = Math.min(p, R.next[k]); R.v[k] += R.speed[k]*(to - from); from = to;
-    }
+    let v = lo + rng()*(hi - lo) + fz*(((rng() + rng() + rng())/1.5) - 1);
+    if (v < lo) v = lo + (lo - v);
+    cf[k] = Math.round((v + (bonus || 0))*10)/10; broke[k] = cf[k] > hi ? 'ceiling' : null;
   }
-  R.p = p;
-  const lead = raceLeader(R.v);
-  if (R.lead && lead !== R.lead && R.p > .05){ R.changes++; Sound.tick(.7); }
-  R.lead = lead;
-  raceDraw();
+  const winner = raceLeader(cf), s = STATS.map(k => cf[k]).sort((a, b) => b - a);
+  return {cf, broke, race:{winner, photo:s[0] - s[1] < 1, lo, hi}};
 }
-function raceDraw(vals){
-  const race = $('race'); if (!race || !state.race) return;
-  const v = vals || state.race.v, g = raceGeom(state.card), lead = raceLeader(v);
+function raceDraw(v){
+  const race = $('race'); if (!race) return;
+  const g = raceGeom(state.card), lead = raceLeader(v);
   race.querySelectorAll('.lane').forEach(el => {
     const k = el.dataset.k; el.querySelector('.fill').style.width = g.pct(v[k]) + '%'; el.querySelector('.v').textContent = v[k].toFixed(1);
     el.classList.toggle('lead', k === lead && v[k] > g.lo + .05); el.classList.toggle('gold', v[k] > g.hi);
   });
 }
-// The finish: the kick at the line, the winner, the crumble, then the single surviving stat (and a die on top).
 async function raceFinish(card, p, alive){
-  const R = p.race, race = $('race'); if (!race) return;
-  const g = raceGeom(card), skip = () => seq.skip;
-  descEl.classList.add('peeking');                              // lift any residue so the finish is visible
-  const pre = R.pre, post = {}; STATS.forEach(k => { post[k] = pre[k] + R.kick[k]; });
-  const s = STATS.map(k => post[k]).sort((a, b) => b - a), photo = s[0] - s[1] < 1;
-  if (photo && $('racePhoto')) $('racePhoto').classList.add('on');
-  Sound.land(1);
-  const dur = photo ? 1300 : 650, t0 = performance.now();
+  const race = $('race'); if (!race) return;
+  const g = raceGeom(card), R = p.race, bonus = p.die ? p.die.total : 0, skip = () => seq.skip;
+  descEl.classList.add('racing');                               // lift any residue so the race is in full view (not 'peeking': lifting the finger ends a peek)
+  const target = {}, wob = {}; STATS.forEach(k => { target[k] = p.chanceFactors[k] - bonus; wob[k] = {ph:rng()*6.28, amp:(5 + rng()*4)*(g.hi - g.lo)/42, f:1.6 + rng()*1.4}; });
+  await seqWait(250); if (!alive()) return;
+  // Lead changes come from wobble that fades to nothing at the finish, so the bars always land on the real values.
+  const D = 1900 + card.rank*80, slowFrom = .78, slowK = R.photo ? 2.6 : 1, t0 = performance.now();
+  let lastLead = null, shown = false;
   while (!skip() && alive()){
-    const q = Math.min(1, (performance.now() - t0)/dur), e = 1 - Math.pow(1 - q, 3), cur = {};
-    STATS.forEach(k => { cur[k] = pre[k] + R.kick[k]*e; }); raceDraw(cur);
-    if (q >= 1) break; await frame();
+    const el = performance.now() - t0, fast = D*slowFrom, t = el < fast ? el/D : Math.min(1, slowFrom + (el - fast)/(D*slowK));
+    if (R.photo && t > slowFrom && !shown){ shown = true; $('racePhoto').classList.add('on'); }
+    const e = 1 - Math.pow(1 - t, 3), cur = {};
+    STATS.forEach(k => { const w = wob[k]; cur[k] = t >= 1 ? target[k] : Math.max(g.lo, g.lo + (target[k] - g.lo)*e + w.amp*Math.sin(w.f*t*6.28 + w.ph)*Math.pow(1 - t, 1.6)); });
+    raceDraw(cur);
+    const lead = raceLeader(cur); if (lastLead && lead !== lastLead && t < .97) Sound.tick(.7); lastLead = lead;
+    if (t >= 1) break; await frame();
   }
   if (!alive()) return;
-  raceDraw(post);
+  raceDraw(target);
   const winEl = race.querySelector(`.lane[data-k="${R.winner}"]`);
   winEl.classList.add('win'); Sound.hit(.8); vibrate(18);
   await seqWait(380); if (!alive()) return;
@@ -721,7 +711,7 @@ async function raceFinish(card, p, alive){
     if (el === winEl) return;
     el.classList.add('lost');
     if (skip() || reduceMotion()) return;
-    const fr = el.querySelector('.tr').getBoundingClientRect(), w = fr.width*g.pct(post[el.dataset.k])/100;
+    const fr = el.querySelector('.tr').getBoundingClientRect(), w = fr.width*g.pct(target[el.dataset.k])/100;
     for (let i = 0; i < 14; i++){
       const f = document.createElement('div'); f.className = 'flake';
       f.style.left = (fr.left - dr.left + rng()*w) + 'px'; f.style.top = (fr.top - dr.top + rng()*fr.height) + 'px'; descEl.appendChild(f);
@@ -733,7 +723,7 @@ async function raceFinish(card, p, alive){
   await seqWait(480); if (!alive()) return;
   race.querySelectorAll('.lane.lost').forEach(el => el.classList.add('gone'));
   await seqWait(360); if (!alive()) return;
-  const before = post[R.winner], final = p.chanceFactors[R.winner];
+  const before = target[R.winner], final = p.chanceFactors[R.winner];
   race.outerHTML = soloHTML(card, R.winner, before, 'in');
   if (p.die){
     await seqWait(300); if (!alive()) return;
@@ -748,13 +738,15 @@ async function raceFinish(card, p, alive){
     descEl.querySelector('.solo').outerHTML = soloHTML(card, R.winner, final);
   }
   if (final > g.hi && !skip()){ Sound.hit(1); vibrate([20, 30, 20]); }
-  setTimeout(() => descEl && descEl.classList.remove('peeking'), 500);
+  setTimeout(() => descEl && descEl.classList.remove('racing'), 500);
 }
 function raceSettle(card, p){                                   // the end state, with no animation
   const race = $('race'), solo = descEl.querySelector('.solo');
   const html = soloHTML(card, p.race.winner, p.chanceFactors[p.race.winner]);
   if (race) race.outerHTML = html; else if (solo) solo.outerHTML = html;
   descEl.querySelectorAll('.flake').forEach(f => f.remove());
+  if (p.die){ const el = $('vDie'); el.hidden = false; el.className = 'die-chip landed r' + p.die.rank; el.innerHTML = dieChipHTML(p.die, p.die.total); }
+  setTimeout(() => descEl && descEl.classList.remove('racing'), 300);
 }
 
 /* ================= Resolve ================= */
@@ -770,15 +762,7 @@ function resolve(st){
   const die = state.ctx.die ? rollDie(state.ctx.die) : null;
   const p = rollPayload(state.card, grade, force, settings.holoRate, die ? die.total : 0);
   p.die = die;
-  if (state.race){
-    const R = state.race; raceAdvance(1);
-    const [lo, hi] = raceRange(state.card), pre = {}, kick = {}, cf = {}, broke = {};
-    for (const k of STATS){ pre[k] = R.v[k]; kick[k] = gammaRand(RACE.kickShape, RACE.kick*raceScale(state.card)/RACE.kickShape);
-      cf[k] = Math.round((pre[k] + kick[k] + (die ? die.total : 0))*10)/10; broke[k] = cf[k] > hi ? 'ceiling' : null; }
-    const winner = STATS.reduce((a, b) => cf[b] > cf[a] ? b : a), preLead = raceLeader(pre);
-    p.chanceFactors = cf; p.broke = broke;
-    p.race = {winner, preLead, upset:preLead !== winner, changes:R.changes + (preLead !== winner ? 1 : 0), pre, kick, lo, hi};
-  }
+  if (state.raceMode){ const r = raceRoll(state.card, die ? die.total : 0); p.chanceFactors = r.cf; p.broke = r.broke; p.race = r.race; }
   state.payload = p;
   scratchEl.style.pointerEvents = 'none';
   const pristine = grade === 'Pristine';
@@ -795,7 +779,7 @@ function resolve(st){
     durationMs: durMs, strokes: state.strokes, speedPxS: speed, pointer: state.pointerType, forced: Object.entries(force).filter(([,v]) => v !== 'auto').map(([k,v]) => k+'='+v).join(' '),
     haze: settings.haze, peeks: 0, fx: [settings.coat].concat(['Shavings','Audio','Tension','Staged'].filter(k => settings['fx' + k]).map(k => k === 'Shavings' ? 'Debris' : k)).join(' '),
     dieRank: die ? die.rank : '', dieRoll: die ? die.total : '',
-    raceWinner: p.race ? p.race.winner : '', raceUpset: p.race ? p.race.upset : '',
+    raceWinner: p.race ? p.race.winner : '', racePhoto: p.race ? p.race.photo : '',
     cells: cells.map(c => +c.toFixed(3))
   };
   state.row = row;
@@ -1114,7 +1098,7 @@ function toCSV(){
 function newCard(card, ctx){
   if (!card){ const id = $('cardPick').value; card = id === 'random' ? pick(CARDS) : CARDS.find(c => c.id === id); }
   state.card = card; state.ctx = ctx || {};
-  state.raceMode = !!settings.fxRace; state.race = state.raceMode ? raceNew(card) : null;
+  state.raceMode = !!settings.fxRace;
   Object.assign(state, {payload:null, revealed:false, drawing:false, last:null, strokes:0, pathLen:0, drawMs:0, firstT:0, revealT:0, dirty:true});
   state.cells = new Float64Array(64); state.mask = null; state.frozen = false; state.row = null;
   $('slabWrap').innerHTML = '<div class="panel empty">The grading slab appears here once the card resolves. It always shows the true values, however messy the scratch.</div>';
@@ -1202,6 +1186,6 @@ requestAnimationFrame(tick);
 // Test hook
 window.__lab = {state, settings, seq, makeWeights, gridStats, gradeFor, rollPayload, CARDS, get log(){ return log; }};
 window.Engine = {newCard, CARDS, RANKS, STATS, STAT_LABEL, artSVG, pipRow, paintSurface, cfGeom, settings, state, store, esc, rng, Sound,
-  ballToken, BALL_COL, DICE, dieName, rollDie, dieChipHTML, soloHTML, raceDraw, RNAME,
+  ballToken, BALL_COL, DICE, dieName, rollDie, dieChipHTML, soloHTML, RNAME,
   get revealed(){ return state.revealed; }, get started(){ return state.strokes > 0; }, get sequenceRunning(){ return seq.running; }};
 })();

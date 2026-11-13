@@ -902,7 +902,7 @@ function snapshotProgress(){
     b[y*w + x] = Math.round(sum/n*255);
   }
   let bin = ''; for (let i = 0; i < b.length; i += 4096) bin += String.fromCharCode.apply(null, b.subarray(i, i + 4096));
-  return {mw:w, mh:h, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs, race:st.race ? JSON.parse(JSON.stringify(st.race)) : undefined,
+  return {mw:w, mh:h, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs,
     elapsed:st.firstT ? Math.max(0, Math.round((st.lastMoveT || performance.now()) - st.firstT)) : 0};
 }
 function restoreProgress(pr){
@@ -913,7 +913,6 @@ function restoreProgress(pr){
     m[y*st.mw + x] = bin.charCodeAt(sy*pr.mw + sx)/255;
   }
   st.strokes = pr.strokes || 0; st.pathLen = pr.pathLen || 0; st.drawMs = pr.drawMs || 0;
-  if (st.raceMode && pr.race){ st.race = pr.race; E.raceDraw(); }   // the race picks up exactly where it stopped
   st.firstT = performance.now() - (pr.elapsed || 0);
   st.lastMoveT = performance.now();   // the engine's last-move time belongs to the earlier visit; restart it here
   st.maskDirty = true; st.dirty = true;
@@ -1061,7 +1060,7 @@ window.Pilot = {
       if (inst){
         Object.assign(inst, {sealed:false, started:false, scratchedAt:new Date().toISOString(), grade:p.grade, sigmaW:row.sigmaW, isHolo:p.isHolo,
           printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken, mask:pristine ? null : encodeMask(),
-          die:p.die ? {rank:p.die.rank, total:p.die.total} : null, race:p.race ? {winner:p.race.winner, upset:p.race.upset, changes:p.race.changes} : undefined});
+          die:p.die ? {rank:p.die.rank, total:p.die.total} : null, race:p.race ? {winner:p.race.winner, photo:p.race.photo} : undefined});
         delete inst.dieCommit;
         if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
       }
@@ -1071,7 +1070,7 @@ window.Pilot = {
         durationMs:row.durationMs, strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:false,
         heldMs:inst ? Date.now() - new Date(inst.at).getTime() : undefined, ball:inst && inst.ball ? inst.ball.l + inst.ball.n : '', daubed:false,
         dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined,
-        raceWinner:p.race ? p.race.winner : undefined, raceUpset:p.race ? p.race.upset : undefined, raceChanges:p.race ? p.race.changes : undefined});
+        raceWinner:p.race ? p.race.winner : undefined, racePhoto:p.race ? p.race.photo : undefined});
       if (current) current.dieCommit = null;
       updateChips();
       return;
@@ -1081,7 +1080,7 @@ window.Pilot = {
       source:ctx.source || 'debug', node:ctx.node || null, provenance:ctx.provenance || '',
       grade:p.grade, sigmaW:row.sigmaW, isHolo:p.isHolo, printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken,
       mask:pristine ? null : encodeMask(), ball:ctx.ball || null, die:p.die ? {rank:p.die.rank, total:p.die.total} : null,
-      race:p.race ? {winner:p.race.winner, upset:p.race.upset, changes:p.race.changes} : undefined
+      race:p.race ? {winner:p.race.winner, photo:p.race.photo} : undefined
     };
     collection.push(inst);
     heldNotes = heldNotes.concat(daub(inst));                 // shown once the reveal finishes, so nothing is spoiled
@@ -1096,7 +1095,7 @@ window.Pilot = {
       sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken, durationMs:row.durationMs,
       strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:inst.source !== 'debug' && realCards().filter(c => c.cardId === card.id).length === 1,
       ball:inst.ball ? inst.ball.l + inst.ball.n : '', daubed:!!inst.bingo, dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined,
-      raceWinner:p.race ? p.race.winner : undefined, raceUpset:p.race ? p.race.upset : undefined, raceChanges:p.race ? p.race.changes : undefined});
+      raceWinner:p.race ? p.race.winner : undefined, racePhoto:p.race ? p.race.photo : undefined});
     updateChips();
   },
   onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; $('scratchDie').hidden = true; installTipEarned = true; askPersist();
@@ -1285,7 +1284,7 @@ function openInspect(inst){
   const cfRows = inst.race ? (() => { const w = inst.race.winner, [lo, hi] = card.cf.probability, b = inst.cf[w] > hi;
       const rest = E.STATS.filter(k => k !== w).sort((a, c) => inst.cf[c] - inst.cf[a]).map(k => `${E.STAT_LABEL[k]} ${inst.cf[k].toFixed(1)}`).join(', ');
       return `<dt>${E.RNAME[w]}</dt><dd>${inst.cf[w].toFixed(1)} <span style="color:var(--muted)">(${lo}–${hi})</span>${b ? ' <span class="flag">broke the ceiling</span>' : ''}</dd>
-        <dt>Race</dt><dd>Won over ${rest}${inst.race.upset ? '. Took the lead at the line' : ''}</dd>`; })()
+        <dt>Race</dt><dd>Won over ${rest}${inst.race.photo ? ', in a photo finish' : ''}</dd>`; })()
     : E.STATS.map(k => { const [lo, hi] = card.cf[k]; const b = inst.broke && inst.broke[k];
     return `<dt>${k[0].toUpperCase() + k.slice(1)}</dt><dd>${inst.cf[k].toFixed(1)} <span style="color:var(--muted)">(${lo}–${hi})</span>${b ? ' <span class="flag">broke the ceiling</span>' : ''}</dd>`; }).join('');
   $('inspSlab').innerHTML = `<div class="slab"><div class="slab-head"><div><div class="t">${E.esc(card.name)}</div><div class="s">Harbor Lights · Launch · ${E.RANKS[card.rank - 1]}</div></div>
