@@ -14,7 +14,7 @@ const SCRATCH_COLS = ['received_at', 'at', 'day', 'tester', 'session', 'source',
 const SURVEY_QS = ['code', 'phone', 'installed', 'enjoy', 'keep_playing', 'open_reasons', 'blockers', 'walked', 'spots_sensible', 'spots_unsafe',
   'scratch_satisfying', 'reveal_feel', 'condition_notice', 'scratch_care', 'peek_found', 'residue_bother', 'holo_feel', 'print_attention',
   'stats_look', 'gold_stat', 'set_want', 'tabs_clear', 'sealed_why', 'favorite', 'frustrating', 'other',
-  'bingo_walk', 'bingo_want', 'dice_use', 'dice_feel'];
+  'bingo_walk', 'bingo_want', 'dice_use', 'dice_feel', 'versions_want'];
 const SURVEY_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone'].concat(SURVEY_QS, ['extra']);
 const PROBLEM_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone', 'area', 'severity', 'what', 'contact', 'diagnostics'];
 const META_KEYS = ['at', 'day', 'tester', 'session', 'type', 'id', 'app', 'platform', 'standalone'];

@@ -17,8 +17,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Alegreya+SC:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
-<link rel="stylesheet" href="css/engine.css?v=2.9">
-<link rel="stylesheet" href="css/pilot.css?v=2.9">
+<link rel="stylesheet" href="css/engine.css?v=3.0">
+<link rel="stylesheet" href="css/pilot.css?v=3.0">
 </head>
 <body>
 <div class="app" id="app">
@@ -199,7 +199,7 @@
           <label class="tog"><input type="checkbox" id="fxShavings"><span>Debris<small>Peel: the coating rolls into a curl ahead of the coin and drops off when you change direction or it gets too big. Flaky: metal flakes spray off.</small></span></label>
           <label class="tog"><input type="checkbox" id="fxAudio"><span>Rich sound and haptics<small>A grainy scratch sound that follows your speed, plus vibration ticks on Android. Off uses the plain hiss.</small></span></label>
           <label class="tog"><input type="checkbox" id="fxTension"><span>Tension<small>From about three quarters of the way to the reveal line: rising pitch, light through the thin spots, and a slight tremble. Driven by coverage only.</small></span></label>
-          <label class="tog"><input type="checkbox" id="fxRace"><span>Chance Factor race (experimental)<small>The four Chance Factors share one range. Once the card resolves, any residue lifts and they race up in full view; the highest takes the card and the other three crumble. Applies from the next card. Testers don’t see this unless it’s turned on here.</small></span></label>
+          <label class="tog"><input type="checkbox" id="fxRace"><span>Chance Factor race<small>On for everyone. The four Chance Factors share one range. Once the card resolves, any residue lifts and they race up in full view; the highest takes the card and the other three crumble. Turning it off here shows all four stats again, from the next card.</small></span></label>
           <label class="tog"><input type="checkbox" id="fxStaged"><span>Staged reveal<small>A short beat, then values land in sequence. Everything is still rolled at the same instant. Tap the card to skip.</small></span></label>
         </div></div>
       </details>
@@ -254,10 +254,10 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/maplibre/maplibre-gl.js"></script>
 <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
-<script src="js/mapstyle.js?v=2.9"></script>
-<script src="js/engine.js?v=2.9"></script>
+<script src="js/mapstyle.js?v=3.0"></script>
+<script src="js/engine.js?v=3.0"></script>
 <!-- config.js is tiny and edited by hand, so always fetch it fresh rather than from cache -->
 <script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/pilot.js?v=2.9"></script>
+<script src="js/pilot.js?v=3.0"></script>
 </body>
 </html>

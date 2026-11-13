@@ -28,7 +28,7 @@ const CARDS = [
   {id:'ferry',   no:12, name:'Night Ferry',       rank:5, run:{label:'A',size:25},  sig:['B','11'], ttt:'X', sky:['#0B1028','#3B3F7A'], glyph:'ferry'},
 ].map(c => ({...c, cf: cfTemplate(c.rank)}));
 
-const DEFAULTS = {threshold:65, brush:10, strength:40, haze:100, coat:'peel', peelStrength:20, fxFlaky:true, fxShavings:true, fxAudio:true, fxTension:true, fxStaged:true, fxRace:false, weight:'gaussian', spread:70, pristine:7.5, good:15, fair:25,
+const DEFAULTS = {threshold:65, brush:10, strength:40, haze:100, coat:'peel', peelStrength:20, fxFlaky:true, fxShavings:true, fxAudio:true, fxTension:true, fxStaged:true, fxRace:true, weight:'gaussian', spread:70, pristine:7.5, good:15, fair:25,
   heat:'off', holoRate:12, sound:true, tester:false, card:'random'};
 
 /* ================= Storage (best effort) ================= */
@@ -39,6 +39,8 @@ const store = {
 const settings = Object.assign({}, DEFAULTS, store.get('settings', {}));
 // Grade cutoffs v2, set from the first real scratches (Nov 10): Pristine was landing on a single quick sweep.
 // Every phone saved the old cutoffs (13/22/32), so move them once; Debug sliders can still change them afterward.
+// The Chance Factor race became the default for everyone (Nov 13); phones that saved it as off move once.
+if ((settings.raceV || 0) < 1){ settings.fxRace = true; settings.raceV = 1; store.set('settings', settings); }
 if ((settings.gradeV || 0) < 2){ Object.assign(settings, {pristine:DEFAULTS.pristine, good:DEFAULTS.good, fair:DEFAULTS.fair, gradeV:2}); store.set('settings', settings); }
 let log = store.get('log', []);
 if (!Array.isArray(log)) log = [];

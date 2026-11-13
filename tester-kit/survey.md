@@ -79,8 +79,9 @@ No email or sign-in is collected; the tester code links answers to logs and is f
     *Multiple choice:* No / I noticed them / A low number felt special
     *Answers:* "Reactions to low print numbers."
 
-19. **Did you look at the four stats (Prob, Luck, Entr, Var)?**
-    *Multiple choice:* Never / Glanced at them / Checked them often
+19. **Did you watch the Chance Factor race after each scratch, or skip it?**
+    *Multiple choice:* Usually skipped it / Sometimes watched / Watched every time
+    *Answers:* whether the race adds excitement or just adds time to the reveal.
 
 20. **Did you notice a stat shown in gold (past its normal range)? How did it feel?**
     *Multiple choice:* Didn't see one / Saw one, didn't care / Liked it / Didn't understand it
@@ -99,6 +100,8 @@ No email or sign-in is collected; the tester code links answers to logs and is f
     *Answers:* whether the sealed card idea has pull on its own, ahead of trading.
 
 ## Bingo and dice
+
+- **Also asked, near question 22:** "Did you try to collect different versions (Prob, Luck, Entr, Var) of the same card?" *(Didn't notice versions / Noticed, didn't care / A little / Yes, a lot)*. Answers whether versions give duplicates a purpose.
 
 24. **Did your bingo board ever change which spot you walked to?**
     *Multiple choice:* Never / Once or twice / Several times / Most days

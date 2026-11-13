@@ -36,6 +36,7 @@ It's a static web app with no build step and no backend. Host the folder anywher
   - **Where dice show:** a fixed die button at the map's bottom right (gold charge ring, a tumble on each percent gained, a bounce and glow when ready, a badge for found dice) opens a Your dice panel; Collection › Dice shows the same.
   - **Basic die:** a permanent Common die, charged by Distance: 1 km walked (GPS movement under 3 m/s, ignoring drift) or 2 hours with the app open and idle, never both at once, capped at 3 charges a day.
   - **Dice caches:** 3 extra spots per area (2 on later batches), placed by the same rules as card spots. Each gives a die (Common 60%, Uncommon 30%, Rare 8%, Legendary 2%) and restocks after 6 hours.
+- **Chance Factor race (on by default):** the four Chance Factors share one range per card and are rolled together at the reveal. Once the card resolves, any residue lifts, the four race up in full view, the highest takes the card and the other three crumble. Each copy keeps one stat, so every card comes in four versions, shown as chips in the Set view. Debug › Feel can turn it off.
 - **Card draws:** weighted by rank: Common 45%, Uncommon 28%, Rare 17%, Legendary 8%, Mythic 2%.
 - **Saving:** everything is saved in the phone's browser storage, including each card's frozen residue.
 

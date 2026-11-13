@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="css/forms.css?v=2.9">
+<link rel="stylesheet" href="css/forms.css?v=3.0">
 </head>
 <body>
 <main>
@@ -30,7 +30,7 @@
   <footer><a href="./#collection">Back to Pecan Pie</a> · <a href="guide.html">Tester guide</a></footer>
 </main>
 <script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/forms.js?v=2.9"></script>
+<script src="js/forms.js?v=3.0"></script>
 <script>
 (() => {
 'use strict';
@@ -59,10 +59,11 @@ const Q = [
   {section:'What’s under the panel'},
   {id:'holo_feel', type:'choice', label:'Did you pull a Holo card? How did it feel?', options:['I didn’t get one', 'It didn’t feel special', 'A little exciting', 'Very exciting'], required:true},
   {id:'print_attention', type:'choice', label:'Did you pay attention to print numbers (like 47/500)?', options:['No', 'I noticed them', 'A low number felt special'], required:true},
-  {id:'stats_look', type:'choice', label:'Did you look at the four stats (Prob, Luck, Entr, Var)?', options:['Never', 'Glanced at them', 'Checked them often'], required:true},
+  {id:'stats_look', type:'choice', label:'Did you watch the Chance Factor race after each scratch, or skip it?', options:['Usually skipped it', 'Sometimes watched', 'Watched every time'], required:true},
   {id:'gold_stat', type:'choice', label:'Did you notice a stat shown in gold (past its normal range)? How did it feel?', options:['Didn’t see one', 'Saw one, didn’t care', 'Liked it', 'Didn’t understand it'], required:true},
   {section:'Collection'},
   {id:'set_want', type:'scale', label:'How much did you want to complete the Harbor Lights set?', ends:['Didn’t care', 'Really wanted to'], required:true},
+  {id:'versions_want', type:'choice', label:'Did you try to collect different versions (Prob, Luck, Entr, Var) of the same card?', options:['Didn’t notice versions', 'Noticed, didn’t care', 'A little', 'Yes, a lot'], required:true},
   {id:'tabs_clear', type:'choice', label:'Was the difference between the Set and My cards tabs clear?', options:['Yes', 'Mostly', 'No'], required:true},
   {id:'sealed_why', type:'checks', label:'If you kept any cards sealed, why?', hint:'Pick all that apply.', options:['I didn’t keep any sealed', 'To scratch later', 'To keep as a collectible', 'In case trading is added', 'I forgot about them'], required:true},
   {section:'Bingo and dice'},
