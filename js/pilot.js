@@ -74,7 +74,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '2.7';
+const APP_V = '2.8';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -902,7 +902,7 @@ function snapshotProgress(){
     b[y*w + x] = Math.round(sum/n*255);
   }
   let bin = ''; for (let i = 0; i < b.length; i += 4096) bin += String.fromCharCode.apply(null, b.subarray(i, i + 4096));
-  return {mw:w, mh:h, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs,
+  return {mw:w, mh:h, mask:btoa(bin), strokes:st.strokes, pathLen:st.pathLen, drawMs:st.drawMs, race:st.race ? JSON.parse(JSON.stringify(st.race)) : undefined,
     elapsed:st.firstT ? Math.max(0, Math.round((st.lastMoveT || performance.now()) - st.firstT)) : 0};
 }
 function restoreProgress(pr){
@@ -913,6 +913,7 @@ function restoreProgress(pr){
     m[y*st.mw + x] = bin.charCodeAt(sy*pr.mw + sx)/255;
   }
   st.strokes = pr.strokes || 0; st.pathLen = pr.pathLen || 0; st.drawMs = pr.drawMs || 0;
+  if (st.raceMode && pr.race){ st.race = pr.race; E.raceDraw(); }   // the race picks up exactly where it stopped
   st.firstT = performance.now() - (pr.elapsed || 0);
   st.lastMoveT = performance.now();   // the engine's last-move time belongs to the earlier visit; restart it here
   st.maskDirty = true; st.dirty = true;
@@ -1060,7 +1061,7 @@ window.Pilot = {
       if (inst){
         Object.assign(inst, {sealed:false, started:false, scratchedAt:new Date().toISOString(), grade:p.grade, sigmaW:row.sigmaW, isHolo:p.isHolo,
           printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken, mask:pristine ? null : encodeMask(),
-          die:p.die ? {rank:p.die.rank, total:p.die.total} : null});
+          die:p.die ? {rank:p.die.rank, total:p.die.total} : null, race:p.race ? {winner:p.race.winner, upset:p.race.upset, changes:p.race.changes} : undefined});
         delete inst.dieCommit;
         if (!store.set('collection', collection)){ inst.mask = null; store.set('collection', collection); }
       }
@@ -1069,7 +1070,8 @@ window.Pilot = {
         computedGrade:row.computedGrade, sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken,
         durationMs:row.durationMs, strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:false,
         heldMs:inst ? Date.now() - new Date(inst.at).getTime() : undefined, ball:inst && inst.ball ? inst.ball.l + inst.ball.n : '', daubed:false,
-        dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined});
+        dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined,
+        raceWinner:p.race ? p.race.winner : undefined, raceUpset:p.race ? p.race.upset : undefined, raceChanges:p.race ? p.race.changes : undefined});
       if (current) current.dieCommit = null;
       updateChips();
       return;
@@ -1078,7 +1080,8 @@ window.Pilot = {
       id:'c' + Date.now().toString(36) + Math.floor(E.rng()*1e4).toString(36), cardId:card.id, at:new Date().toISOString(),
       source:ctx.source || 'debug', node:ctx.node || null, provenance:ctx.provenance || '',
       grade:p.grade, sigmaW:row.sigmaW, isHolo:p.isHolo, printNumber:p.printNumber, cf:p.chanceFactors, broke:p.broke, token:p.microGameToken,
-      mask:pristine ? null : encodeMask(), ball:ctx.ball || null, die:p.die ? {rank:p.die.rank, total:p.die.total} : null
+      mask:pristine ? null : encodeMask(), ball:ctx.ball || null, die:p.die ? {rank:p.die.rank, total:p.die.total} : null,
+      race:p.race ? {winner:p.race.winner, upset:p.race.upset, changes:p.race.changes} : undefined
     };
     collection.push(inst);
     heldNotes = heldNotes.concat(daub(inst));                 // shown once the reveal finishes, so nothing is spoiled
@@ -1092,7 +1095,8 @@ window.Pilot = {
     event('scratch_reveal', {source:inst.source, node:inst.node, placeSrc:place ? place.src : '', placeKind:place ? place.kind : '', lowPrint, card:card.id, rank:card.rank, grade:p.grade, computedGrade:row.computedGrade,
       sigmaW:row.sigmaW, holo:p.isHolo, print:p.printNumber, broke:row.broke, token:p.microGameToken, durationMs:row.durationMs,
       strokes:row.strokes, speedPxS:row.speedPxS, coverage:row.coverage, fx:row.fx, newSlot:inst.source !== 'debug' && realCards().filter(c => c.cardId === card.id).length === 1,
-      ball:inst.ball ? inst.ball.l + inst.ball.n : '', daubed:!!inst.bingo, dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined});
+      ball:inst.ball ? inst.ball.l + inst.ball.n : '', daubed:!!inst.bingo, dieRank:p.die ? p.die.rank : undefined, dieRoll:p.die ? p.die.total : undefined,
+      raceWinner:p.race ? p.race.winner : undefined, raceUpset:p.race ? p.race.upset : undefined, raceChanges:p.race ? p.race.changes : undefined});
     updateChips();
   },
   onFinish(){ $('scratchDone').hidden = false; $('scratchBack').hidden = true; $('scratchDie').hidden = true; installTipEarned = true; askPersist();
@@ -1155,7 +1159,7 @@ function cardMarkup(card, inst, idx){
         <div class="slot"><span class="lbl">Print</span><span class="val">${v.print}</span></div>
         <div class="slot"><span class="lbl">Token</span><span class="val">${v.token}</span></div>
       </div>
-      <div class="cf">${cf}</div>
+      ${shown && inst.race ? E.soloHTML(card, inst.race.winner, inst.cf[inst.race.winner]) : `<div class="cf">${cf}</div>`}
       ${shown && inst.die ? `<div class="die-chip landed r${inst.die.rank}">${E.dieChipHTML(inst.die, inst.die.total)}</div>` : ''}
       ${resid}
     </div>
@@ -1278,7 +1282,11 @@ function openInspect(inst){
   const cv = $('inspCard').querySelector('canvas.resid');
   if (cv) paintResidue(cv, inst.mask);
   $('inspHint').textContent = isTest(inst) ? 'A test card from the Debug tab. It doesn’t count toward your set.' : inst.mask ? 'Hold the panel to read through the residue.' : inst.grade === 'Pristine' ? 'A Pristine copy. The panel came off clean.' : '';
-  const cfRows = E.STATS.map(k => { const [lo, hi] = card.cf[k]; const b = inst.broke && inst.broke[k];
+  const cfRows = inst.race ? (() => { const w = inst.race.winner, [lo, hi] = card.cf.probability, b = inst.cf[w] > hi;
+      const rest = E.STATS.filter(k => k !== w).sort((a, c) => inst.cf[c] - inst.cf[a]).map(k => `${E.STAT_LABEL[k]} ${inst.cf[k].toFixed(1)}`).join(', ');
+      return `<dt>${E.RNAME[w]}</dt><dd>${inst.cf[w].toFixed(1)} <span style="color:var(--muted)">(${lo}–${hi})</span>${b ? ' <span class="flag">broke the ceiling</span>' : ''}</dd>
+        <dt>Race</dt><dd>Won over ${rest}${inst.race.upset ? '. Took the lead at the line' : ''}</dd>`; })()
+    : E.STATS.map(k => { const [lo, hi] = card.cf[k]; const b = inst.broke && inst.broke[k];
     return `<dt>${k[0].toUpperCase() + k.slice(1)}</dt><dd>${inst.cf[k].toFixed(1)} <span style="color:var(--muted)">(${lo}–${hi})</span>${b ? ' <span class="flag">broke the ceiling</span>' : ''}</dd>`; }).join('');
   $('inspSlab').innerHTML = `<div class="slab"><div class="slab-head"><div><div class="t">${E.esc(card.name)}</div><div class="s">Harbor Lights · Launch · ${E.RANKS[card.rank - 1]}</div></div>
     <div class="slab-grade"><div class="g g-${inst.grade}">${inst.grade}</div></div></div>
