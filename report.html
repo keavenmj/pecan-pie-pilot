@@ -79,6 +79,8 @@ form.addEventListener('submit', async e => {
   btn.disabled = true; btn.textContent = 'Sending…';
   try{
     await F.send('problem_report', F.testerCode(), {area:a.area, severity:a.severity, what:a.what, contact:a.contact, diag});
+    // The Sheet's reply can't be read from here, so keep a copy of the last few reports on the phone before clearing the draft.
+    const sent = F.ls.get('reportsSent', []); sent.push({at:new Date().toISOString(), area:a.area, severity:a.severity, what:a.what, contact:a.contact}); F.ls.set('reportsSent', sent.slice(-10));
     F.ls.del('reportDraft');
     document.getElementById('questions').hidden = true; document.getElementById('diagBox').hidden = true; btn.hidden = true;
     show('ok', 'Sent. Thank you, this really helps.');

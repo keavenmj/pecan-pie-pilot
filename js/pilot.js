@@ -216,7 +216,8 @@ let dice = store.get('dice', []);
 const DIE_ODDS = [60, 30, 8, 2, 0];                       // dice caches: mostly Common and Uncommon
 const DIST_CHARGE = 1000, DIST_CAP = 3000, IDLE_RATE = DIST_CHARGE/7200;   // 1 km walked, or 2 h with the app open; 3 charges a day
 let basic = Object.assign({pts:0, ready:false, day:'', today:0, walkM:0, idleS:0, anchor:null, lastMoveT:0}, store.get('basicDie', {}));
-const saveBasic = () => store.set('basicDie', basic);
+basic.anchor = null;                                      // a position from an earlier visit is never a valid starting point
+const saveBasic = () => store.set('basicDie', Object.assign({}, basic, {anchor:null}));
 function grantDie(rank, from){
   dice.push({id:'d' + Date.now().toString(36) + Math.floor(E.rng()*1e4).toString(36), rank, from, at:new Date().toISOString()});
   store.set('dice', dice); event('die_earned', {rank, from, held:dice.length});
@@ -251,6 +252,7 @@ function trackMove(lat, lng, acc){
   const now = Date.now(), a = basic.anchor;
   if (!a){ basic.anchor = {lat, lng, t:now}; return; }
   const d = dist(a, {lat, lng}), dt = Math.max(1, (now - a.t)/1000);
+  if (dt > 120){ basic.anchor = {lat, lng, t:now}; return; }   // a gap (app closed or backgrounded): restart from here, credit nothing
   if (d < Math.max(12, acc*.8)) return;                   // jitter: keep the anchor
   basic.anchor = {lat, lng, t:now};
   if (d/dt > 3) return;                                   // faster than a brisk walk: a car, a bus, or a GPS jump
@@ -308,7 +310,8 @@ function updateDieBtn(){
 }
 function releaseDie(c){
   if (!c) return;
-  if (c.src === 'basic'){ basic.ready = true; saveBasic(); }
+  // The slot holds one charge. If it recharged while this die was out, keep the returned one as a found Common die.
+  if (c.src === 'basic'){ if (basic.ready) dice.push({id:'d' + Date.now().toString(36), rank:1, from:'basic', at:new Date().toISOString()}); else { basic.ready = true; saveBasic(); } }
   else dice.push({id:c.id, rank:c.rank, from:c.from || 'returned', at:c.at || new Date().toISOString()});
   store.set('dice', dice); updateDiceChip();
 }
@@ -317,7 +320,7 @@ function commitDie(choice){
   const pk = pendKey(current), prev = currentCommit();
   releaseDie(prev);
   let c = null;
-  if (choice && choice.src === 'basic'){ basic.ready = false; basic.pts = 0; saveBasic(); c = {rank:1, src:'basic'}; }
+  if (choice && choice.src === 'basic'){ basic.ready = false; saveBasic(); c = {rank:1, src:'basic'}; }   // pts kept: any partial charge carries on
   else if (choice){ const i = dice.findIndex(d => d.rank === choice.rank); if (i >= 0){ const d = dice.splice(i, 1)[0]; c = {rank:d.rank, src:'found', id:d.id, from:d.from, at:d.at}; } }
   store.set('dice', dice);
   if (pk && pending[pk]){ pending[pk].die = c; store.set('pending', pending); } else current.dieCommit = c;
@@ -341,17 +344,18 @@ $('diePickList').addEventListener('click', e => {
 });
 
 /* ---------- Notices ---------- */
-let toastQ = [], toastBusy = false;
+let toastQ = [], toastBusy = false, toastTimer = null;
 function toast(lines){
   lines = (lines || []).filter(Boolean); if (!lines.length) return;
   toastQ = toastQ.concat(lines); if (!toastBusy) nextToast();
 }
 function nextToast(){
+  clearTimeout(toastTimer);                               // a tap advances early; the old timer must not advance again
   const el = $('toast'), t = toastQ.shift();
   if (!t){ toastBusy = false; el.hidden = true; return; }
   toastBusy = true; el.textContent = t; el.hidden = false; el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
   if (/^(Bingo|Blackout)/.test(t)){ try{ E.Sound.reveal(4, false); }catch{} try{ navigator.vibrate && navigator.vibrate([20, 40, 20]); }catch{} }
-  setTimeout(nextToast, Math.min(6500, 2600 + t.length*35));
+  toastTimer = setTimeout(nextToast, Math.min(6500, 2600 + t.length*35));
 }
 $('toast').addEventListener('click', () => nextToast());
 

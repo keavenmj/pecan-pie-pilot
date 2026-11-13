@@ -392,7 +392,7 @@ button.bcell { cursor: pointer; font: inherit; font-family: var(--font-display);
 .card .solo .trk { width: 70cqw; }
 .desc .race, .desc .solo { position: relative; z-index: 0; }
 /* The race lifts residue for its whole run; a separate class from peeking, which ends when the finger lifts. */
-.desc .scratch { transition: opacity .35s ease; }
+.desc.race-fade .scratch { transition: opacity .35s ease; }   /* only around the race, so hold-to-peek stays instant */
 .desc.racing .scratch { opacity: .1 !important; }
 
 /* Condition label on the stamp, readable at phone size */

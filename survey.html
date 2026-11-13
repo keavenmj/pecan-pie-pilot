@@ -59,7 +59,7 @@ const Q = [
   {section:'What’s under the panel'},
   {id:'holo_feel', type:'choice', label:'Did you pull a Holo card? How did it feel?', options:['I didn’t get one', 'It didn’t feel special', 'A little exciting', 'Very exciting'], required:true},
   {id:'print_attention', type:'choice', label:'Did you pay attention to print numbers (like 47/500)?', options:['No', 'I noticed them', 'A low number felt special'], required:true},
-  {id:'stats_look', type:'choice', label:'Did you watch the Chance Factor race after each scratch, or skip it?', options:['Usually skipped it', 'Sometimes watched', 'Watched every time'], required:true},
+  {id:'race_watch', type:'choice', label:'Did you watch the Chance Factor race after each scratch, or skip it?', options:['Usually skipped it', 'Sometimes watched', 'Watched every time'], required:true},
   {id:'gold_stat', type:'choice', label:'Did you notice a stat shown in gold (past its normal range)? How did it feel?', options:['Didn’t see one', 'Saw one, didn’t care', 'Liked it', 'Didn’t understand it'], required:true},
   {section:'Collection'},
   {id:'set_want', type:'scale', label:'How much did you want to complete the Harbor Lights set?', ends:['Didn’t care', 'Really wanted to'], required:true},
@@ -94,7 +94,8 @@ form.addEventListener('submit', async e => {
   btn.disabled = true; btn.textContent = 'Sending…';
   try{
     await F.send('survey_response', answers.code, {answers});
-    F.ls.set('surveyDone', Date.now()); F.ls.del('surveyDraft');
+    // The Sheet's reply can't be read from here, so "sent" is unconfirmed: keep the answers on the phone (they stay filled in).
+    F.ls.set('surveyDone', Date.now()); F.ls.set('surveySent', answers);
     form.querySelector('#questions').hidden = true; btn.hidden = true; document.getElementById('already').hidden = true;
     show('ok', 'Sent. Thank you for testing Pecan Pie!');
     window.scrollTo({top:0, behavior:'smooth'});

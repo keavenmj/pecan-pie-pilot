@@ -79,7 +79,7 @@ No email or sign-in is collected; the tester code links answers to logs and is f
     *Multiple choice:* No / I noticed them / A low number felt special
     *Answers:* "Reactions to low print numbers."
 
-19. **Did you watch the Chance Factor race after each scratch, or skip it?**
+19. **Did you watch the Chance Factor race after each scratch, or skip it?** *(column race_watch; the old four-stats question's stats_look column is retired)*
     *Multiple choice:* Usually skipped it / Sometimes watched / Watched every time
     *Answers:* whether the race adds excitement or just adds time to the reveal.
 

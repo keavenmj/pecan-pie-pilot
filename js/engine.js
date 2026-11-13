@@ -688,7 +688,7 @@ function raceDraw(v){
 async function raceFinish(card, p, alive){
   const race = $('race'); if (!race) return;
   const g = raceGeom(card), R = p.race, bonus = p.die ? p.die.total : 0, skip = () => seq.skip;
-  descEl.classList.add('racing');                               // lift any residue so the race is in full view (not 'peeking': lifting the finger ends a peek)
+  descEl.classList.add('race-fade', 'racing');                  // lift any residue so the race is in full view (not 'peeking': lifting the finger ends a peek)
   const target = {}, wob = {}; STATS.forEach(k => { target[k] = p.chanceFactors[k] - bonus; wob[k] = {ph:rng()*6.28, amp:(5 + rng()*4)*(g.hi - g.lo)/42, f:1.6 + rng()*1.4}; });
   await seqWait(250); if (!alive()) return;
   // Lead changes come from wobble that fades to nothing at the finish, so the bars always land on the real values.
@@ -740,15 +740,16 @@ async function raceFinish(card, p, alive){
     descEl.querySelector('.solo').outerHTML = soloHTML(card, R.winner, final);
   }
   if (final > g.hi && !skip()){ Sound.hit(1); vibrate([20, 30, 20]); }
-  setTimeout(() => descEl && descEl.classList.remove('racing'), 500);
+  setTimeout(() => raceUnlift(), 500);
 }
+function raceUnlift(){ const d = descEl; if (!d) return; d.classList.remove('racing'); setTimeout(() => d.classList.remove('race-fade'), 400); }
 function raceSettle(card, p){                                   // the end state, with no animation
   const race = $('race'), solo = descEl.querySelector('.solo');
   const html = soloHTML(card, p.race.winner, p.chanceFactors[p.race.winner]);
   if (race) race.outerHTML = html; else if (solo) solo.outerHTML = html;
   descEl.querySelectorAll('.flake').forEach(f => f.remove());
   if (p.die){ const el = $('vDie'); el.hidden = false; el.className = 'die-chip landed r' + p.die.rank; el.innerHTML = dieChipHTML(p.die, p.die.total); }
-  setTimeout(() => descEl && descEl.classList.remove('racing'), 300);
+  setTimeout(() => raceUnlift(), 300);
 }
 
 /* ================= Resolve ================= */

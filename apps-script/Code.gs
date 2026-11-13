@@ -14,7 +14,7 @@ const SCRATCH_COLS = ['received_at', 'at', 'day', 'tester', 'session', 'source',
 const SURVEY_QS = ['code', 'phone', 'installed', 'enjoy', 'keep_playing', 'open_reasons', 'blockers', 'walked', 'spots_sensible', 'spots_unsafe',
   'scratch_satisfying', 'reveal_feel', 'condition_notice', 'scratch_care', 'peek_found', 'residue_bother', 'holo_feel', 'print_attention',
   'stats_look', 'gold_stat', 'set_want', 'tabs_clear', 'sealed_why', 'favorite', 'frustrating', 'other',
-  'bingo_walk', 'bingo_want', 'dice_use', 'dice_feel', 'versions_want'];
+  'bingo_walk', 'bingo_want', 'dice_use', 'dice_feel', 'versions_want', 'race_watch'];   // stats_look is retired (the four-stat question)
 const SURVEY_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone'].concat(SURVEY_QS, ['extra']);
 const PROBLEM_COLS = ['received_at', 'at', 'tester', 'app', 'platform', 'standalone', 'area', 'severity', 'what', 'contact', 'diagnostics'];
 const META_KEYS = ['at', 'day', 'tester', 'session', 'type', 'id', 'app', 'platform', 'standalone'];
@@ -363,10 +363,11 @@ function append_(sh, cols, rows) {
   if (!rows.length) return;
   const width = Math.max(1, sh.getLastColumn ? sh.getLastColumn() : cols.length);
   let head = sh.getRange(1, 1, 1, width).getValues()[0].map(String);
+  while (head.length && head[head.length - 1] === '') head.pop();   // trailing blanks only; a blank in the middle keeps its place
   const missing = cols.filter(function (c) { return head.indexOf(c) < 0; });
   if (missing.length) {
-    sh.getRange(1, head.filter(String).length + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
-    head = head.filter(String).concat(missing);
+    sh.getRange(1, head.length + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
+    head = head.concat(missing);
   }
   const idx = cols.map(function (c) { return head.indexOf(c); }), n = head.length;
   const out = rows.map(function (r) { const o = new Array(n).fill(''); idx.forEach(function (j, i) { o[j] = r[i]; }); return o; });
