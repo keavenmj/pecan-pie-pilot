@@ -171,11 +171,14 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
    sticker at the right end of the black pip band once the card resolves. */
 .desc-grid { grid-template-columns: repeat(3, 1fr); }
 .pip-set { display: flex; align-items: center; gap: 1.6cqw; }
-.grade-badge { position: absolute; right: 2.2cqw; bottom: 1cqw; opacity: 0; pointer-events: none; transform-origin: 60% 60%;
+.grade-badge { position: absolute; right: 2.2cqw; top: -4cqw; bottom: -3.6cqw; opacity: 0; pointer-events: none; transform-origin: 60% 60%;
+  display: grid; align-content: center; justify-items: center; gap: .5cqw;
   font-family: var(--font-display); font-weight: 700; font-size: 4.9cqw; letter-spacing: .06em; text-transform: uppercase; line-height: 1;
-  padding: 1.35cqw 2.6cqw 1.2cqw; border-radius: 1.9cqw; color: #10141a; background: var(--gc, #ccc);
+  padding: 0 2.6cqw; border-radius: 1.9cqw; color: #10141a; background: var(--gc, #ccc);
   box-shadow: inset 0 0 0 .45cqw rgba(16,20,26,.55), inset 0 0 0 .8cqw var(--gc, #ccc), inset 0 0 0 1.05cqw rgba(16,20,26,.35), 0 0 0 .35cqw #0b0e12, 0 .8cqw 1.6cqw -.4cqw rgba(0,0,0,.7); }
-/* Sits on the band's right end and rises over the bottom edge of the art, like a sticker slapped across the seam.
+/* Always overlaps three areas: it reaches past the band in both directions, onto the bottom of the art and the top
+   of the scratch panel (the band is layered above both). The CONDITION label says what it grades.
+   Sits on the band's right end, like a sticker slapped across the seams.
    The band is layered above the panel, so where the tilted stamp dips onto the panel it sits on top; a thin black outline separates it. */
 .grade-badge.shown { opacity: 1; transform: rotate(-5deg); }
 /* Lifts into view, hangs for a beat, then slams down with a small bounce. Impact is at 72% (about 650 ms). */
@@ -391,3 +394,13 @@ button.bcell { cursor: pointer; font: inherit; font-family: var(--font-display);
 /* The race lifts residue for its whole run; a separate class from peeking, which ends when the finger lifts. */
 .desc .scratch { transition: opacity .35s ease; }
 .desc.racing .scratch { opacity: .1 !important; }
+
+/* Condition label on the stamp, readable at phone size */
+.grade-badge::before { content: "Condition"; font-size: 2.7cqw; letter-spacing: .16em; font-weight: 700; color: rgba(16,20,26,.82); }
+
+/* The single surviving Chance Factor sits in its own captioned frame, so it doesn't read as what the stamp grades. */
+.solo { position: relative; border: .35cqw solid rgba(26,31,38,.28); border-radius: 1.6cqw; padding: 3.4cqw 4cqw 2cqw; margin: 1.5cqw 2cqw 1cqw; background: rgba(255,255,255,.18); flex: 0 1 auto; align-self: stretch; }
+.solo::before { content: "Chance Factor"; position: absolute; top: -1.9cqw; left: 50%; transform: translateX(-50%); background: var(--c-desc); padding: 0 1.6cqw; white-space: nowrap;
+  font-family: var(--font-data); font-size: 2.4cqw; letter-spacing: .14em; text-transform: uppercase; color: #5b5446; }
+.solo .val { font-size: 10cqw; }
+.card .solo .trk { width: 62cqw; }
