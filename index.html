@@ -17,8 +17,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Alegreya+SC:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
-<link rel="stylesheet" href="css/engine.css?v=3.0">
-<link rel="stylesheet" href="css/pilot.css?v=3.0">
+<link rel="stylesheet" href="css/engine.css?v=3.1">
+<link rel="stylesheet" href="css/pilot.css?v=3.1">
 </head>
 <body>
 <div class="app" id="app">
@@ -160,6 +160,7 @@
             <button class="btn" id="dCharge" type="button">Charge basic die</button>
             <button class="btn" id="dDaub" type="button">Fill a bingo square</button>
             <button class="btn" id="dBoard" type="button">New bingo board</button>
+            <button class="btn" id="dReset" type="button">Reset to new tester</button>
           </div>
           <div class="row"><label for="dTester">Tester name</label><input type="text" id="dTester" autocomplete="off"></div>
           <div class="row"><label for="dHook">Log endpoint</label><input type="url" id="dHook" placeholder="https://script.google.com/…" autocomplete="off"></div>
@@ -254,10 +255,10 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/maplibre/maplibre-gl.js"></script>
 <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
-<script src="js/mapstyle.js?v=3.0"></script>
-<script src="js/engine.js?v=3.0"></script>
+<script src="js/mapstyle.js?v=3.1"></script>
+<script src="js/engine.js?v=3.1"></script>
 <!-- config.js is tiny and edited by hand, so always fetch it fresh rather than from cache -->
 <script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/pilot.js?v=3.0"></script>
+<script src="js/pilot.js?v=3.1"></script>
 </body>
 </html>

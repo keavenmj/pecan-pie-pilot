@@ -399,10 +399,13 @@ button.bcell { cursor: pointer; font: inherit; font-family: var(--font-display);
 .grade-badge::before { content: "Condition"; font-size: 2.7cqw; letter-spacing: .16em; font-weight: 700; color: rgba(16,20,26,.82); }
 
 /* The single surviving Chance Factor sits in its own captioned frame, so it doesn't read as what the stamp grades. */
-.solo { position: relative; border: .35cqw solid rgba(26,31,38,.28); border-radius: 1.6cqw; padding: 3.4cqw 4cqw 2cqw; margin: 1.5cqw 2cqw 1cqw; background: rgba(255,255,255,.18); flex: 0 1 auto; align-self: stretch; }
+.solo { position: relative; border: .35cqw solid rgba(26,31,38,.28); border-radius: 1.6cqw; padding: 2.4cqw 4cqw 1.2cqw; margin: 1.6cqw 2cqw .2cqw; gap: .3cqw; background: rgba(255,255,255,.18); flex: 0 1 auto; align-self: stretch; }
 .solo::before { content: "Chance Factor"; position: absolute; top: -1.9cqw; left: 50%; transform: translateX(-50%); background: var(--c-desc); padding: 0 1.6cqw; white-space: nowrap;
   font-family: var(--font-data); font-size: 2.4cqw; letter-spacing: .14em; text-transform: uppercase; color: #5b5446; }
-.solo .val { font-size: 10cqw; }
+.solo .val { font-size: 8.2cqw; }
+.card .solo .name { font-size: 4.2cqw; }
+.card .solo .trk { margin-top: .4cqw; height: 2cqw; }
+.card .solo .rng { font-size: 2.2cqw; }
 .card .solo .trk { width: 62cqw; }
 
 /* ---------- Versions in the Set view ---------- */
@@ -421,3 +424,4 @@ button.bcell { cursor: pointer; font: inherit; font-family: var(--font-display);
 .vstrip .vlabel { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; text-align: center; }
 .vchips.big { gap: 6px; } .vchips.big span { font-size: 12px; padding: 8px 0 7px; border-radius: 8px; }
 .vchips.big span.own { cursor: pointer; } .vchips.big span.current { outline: 2px solid var(--accent); outline-offset: 2px; }
+.solo.empty .name, .solo.empty .val { color: rgba(26,31,38,.35); }

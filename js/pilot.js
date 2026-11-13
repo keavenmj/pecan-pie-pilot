@@ -74,7 +74,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '3.0';
+const APP_V = '3.1';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -1158,7 +1158,9 @@ function cardMarkup(card, inst, idx){
         <div class="slot"><span class="lbl">Print</span><span class="val">${v.print}</span></div>
         <div class="slot"><span class="lbl">Token</span><span class="val">${v.token}</span></div>
       </div>
-      ${shown && inst.race ? E.soloHTML(card, inst.race.winner, inst.cf[inst.race.winner]) : `<div class="cf">${cf}</div>`}
+      ${shown && inst.race ? E.soloHTML(card, inst.race.winner, inst.cf[inst.race.winner])
+        : !shown && versionsOn() ? `<div class="solo empty"><div class="name">?</div><div class="val">?</div><div class="rng">Range ${card.cf.probability[0]}–${card.cf.probability[1]}</div></div>`
+        : `<div class="cf">${cf}</div>`}
       ${shown && inst.die ? `<div class="die-chip landed r${inst.die.rank}">${E.dieChipHTML(inst.die, inst.die.total)}</div>` : ''}
       ${resid}
     </div>
@@ -1400,7 +1402,8 @@ let wipeArmed = false;
 $('dWipe').addEventListener('click', () => {
   if (!wipeArmed){ wipeArmed = true; $('dWipe').textContent = 'Tap again to erase'; setTimeout(() => { wipeArmed = false; $('dWipe').textContent = 'Erase collection'; }, 3000); return; }
   collection = []; store.set('collection', collection); wipeArmed = false; $('dWipe').textContent = 'Erase collection';
-  $('dNote').textContent = 'Collection erased.'; updateChips(); event('collection_erased');
+  board = newBoard(); store.set('bingo', board); refreshNodes();       // the board is built from the collection, so it goes too
+  $('dNote').textContent = 'Collection erased, with a new bingo board.'; updateChips(); event('collection_erased');
 });
 $('newCard').addEventListener('click', () => openScratch(drawCard(), {source:'debug', label:'Test card', provenance:'Test card', ball:rollBall()}));
 $('dDice').addEventListener('click', () => { for (let r = 1; r <= 5; r++) grantDie(r, 'debug'); $('dNote').textContent = 'Added one die of each rank.'; });
@@ -1410,6 +1413,23 @@ $('dDaub').addEventListener('click', () => {
   const i = open[Math.floor(E.rng()*open.length)], c = board.cells[i];
   toast(daub({id:'debug' + Date.now().toString(36), ball:{l:c.l, n:c.n}, source:'node', debugFill:true}));
   $('dNote').textContent = `Filled ${c.l}·${c.n}.`;
+});
+let resetArmed = false;
+$('dReset').addEventListener('click', () => {
+  if (!resetArmed){ resetArmed = true; $('dReset').textContent = 'Tap again to reset everything'; setTimeout(() => { resetArmed = false; $('dReset').textContent = 'Reset to new tester'; }, 3000); return; }
+  resetArmed = false; $('dReset').textContent = 'Reset to new tester';
+  // Everything a brand-new tester wouldn't have. Kept: tester code, settings, and the event log and its outbox.
+  collection = []; store.set('collection', collection);
+  board = newBoard(); store.set('bingo', board);
+  badges = []; store.set('badges', badges);
+  dice = []; store.set('dice', dice);
+  basic = Object.assign(basic, {pts:0, ready:false, today:0, walkM:0, idleS:0}); saveBasic();
+  pending = {}; store.set('pending', pending);
+  daily.last = 0; store.set('daily', daily);
+  if (nodes){ nodes.forEach(n => { n.coolUntil = 0; delete n.ball; }); store.set('nodes', nodes); }
+  event('tester_reset');
+  updateChips(); updateDiceChip(); refreshNodes();
+  $('dNote').textContent = 'Reset: empty collection, new bingo board, no dice or badges, all spots and the daily card ready.';
 });
 $('dBoard').addEventListener('click', () => { board = newBoard(); store.set('bingo', board); refreshNodes(); $('dNote').textContent = 'New bingo board.'; });
 
