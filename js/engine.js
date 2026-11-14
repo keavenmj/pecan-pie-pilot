@@ -688,7 +688,6 @@ function raceDraw(v){
 async function raceFinish(card, p, alive){
   const race = $('race'); if (!race) return;
   const g = raceGeom(card), R = p.race, bonus = p.die ? p.die.total : 0, skip = () => seq.skip;
-  descEl.classList.add('race-fade', 'racing');                  // lift any residue so the race is in full view (not 'peeking': lifting the finger ends a peek)
   const target = {}, wob = {}; STATS.forEach(k => { target[k] = p.chanceFactors[k] - bonus; wob[k] = {ph:rng()*6.28, amp:(5 + rng()*4)*(g.hi - g.lo)/42, f:1.6 + rng()*1.4}; });
   await seqWait(250); if (!alive()) return;
   // Lead changes come from wobble that fades to nothing at the finish, so the bars always land on the real values.
@@ -740,16 +739,16 @@ async function raceFinish(card, p, alive){
     descEl.querySelector('.solo').outerHTML = soloHTML(card, R.winner, final);
   }
   if (final > g.hi && !skip()){ Sound.hit(1); vibrate([20, 30, 20]); }
-  setTimeout(() => raceUnlift(), 500);
 }
-function raceUnlift(){ const d = descEl; if (!d) return; d.classList.remove('racing'); setTimeout(() => d.classList.remove('race-fade'), 400); }
+// Residue dims (never disappears) while the values resolve, then settles back. Separate from peeking, which ends when the finger lifts.
+function dimResidue(){ if (!descEl || !state.frozen) return; descEl.classList.add('dim-fade', 'dimmed'); }
+function undimResidue(){ const d = descEl; if (!d || !d.classList.contains('dimmed')) return; d.classList.remove('dimmed'); setTimeout(() => d.classList.remove('dim-fade'), 800); }
 function raceSettle(card, p){                                   // the end state, with no animation
   const race = $('race'), solo = descEl.querySelector('.solo');
   const html = soloHTML(card, p.race.winner, p.chanceFactors[p.race.winner]);
   if (race) race.outerHTML = html; else if (solo) solo.outerHTML = html;
   descEl.querySelectorAll('.flake').forEach(f => f.remove());
   if (p.die){ const el = $('vDie'); el.hidden = false; el.className = 'die-chip landed r' + p.die.rank; el.innerHTML = dieChipHTML(p.die, p.die.total); }
-  setTimeout(() => raceUnlift(), 300);
 }
 
 /* ================= Resolve ================= */
@@ -801,6 +800,7 @@ function resolve(st){
 }
 function finishReveal(row, p, pristine){
   descEl.classList.remove('unknown');
+  undimResidue();                                               // a skipped sequence still ends with the residue back
   renderSlab(row, p);
   drawHeat();
   $('hint').textContent = pristine ? 'Pristine. The panel wiped clean.' : residueHint();
@@ -819,11 +819,17 @@ async function stagedReveal(card, p, pristine, row){
   const alive = () => token === seq.id;
   const wait = seqWait;
   const R = card.rank, gap = 130 + R*30;
+  // 1. The lock: the coating stops, the card gives a small press, and there's a beat of stillness.
   Sound.crack(R); vibrate(20);
-  if (!reduceMotion()) cardEl.animate([{transform:'scale(1)'}, {transform:'scale(1.018)'}, {transform:'scale(1)'}], {duration:240, easing:'ease-out'});
+  if (!reduceMotion()) cardEl.animate([{transform:'scale(1)'}, {transform:'scale(.985)'}, {transform:'scale(1)'}], {duration:260, easing:'ease-out'});
   if (pristine) wipeClean(); else freezeResidue();
-  if (p.race){ await raceFinish(card, p, alive); if (!alive()) return; if (seq.skip) raceSettle(card, p); }
-  await wait(170 + R*40); if (!alive()) return;
+  await wait(320); if (!alive()) return;
+  // 2. The verdict on the scratch: condition is decided by the scratching, so it lands as soon as scratching is done.
+  showGrade(p.grade, !seq.skip);
+  await wait(950); if (!alive()) return;
+  // 3. Residue dims, never vanishes, so the values can be read as they resolve.
+  dimResidue();
+  await wait(380); if (!alive()) return;
   setVal('vHolo', p.isHolo ? 'Holo' : 'Normal'); Sound.land(0);
   if (p.isHolo){ cardEl.classList.add('holo'); if (pristine) celebrate(R, true, true); else Sound.hit(.6); }
   await wait(gap); if (!alive()) return;
@@ -838,10 +844,12 @@ async function stagedReveal(card, p, pristine, row){
   await wait(gap); if (!alive()) return;
   if (p.die && !p.race){ await rollDieChip(p.die, 420 + R*60, alive); if (!alive()) return; await wait(gap*.7); if (!alive()) return; }
   if (!p.race) await Promise.all(STATS.map((k, i) => countCF(card, p, k, i*90, 380 + R*60, alive)));
+  else { await raceFinish(card, p, alive); if (!alive()) return; if (seq.skip) raceSettle(card, p); }
   if (!alive()) return;
-  await wait(gap*.8); if (!alive()) return;
-  showGrade(p.grade, !seq.skip);   // the verdict on how you scratched is stamped on last
   if (!(p.isHolo && pristine)) Sound.reveal(R, false);
+  // 4. Everything has landed: the residue settles back to full.
+  await wait(gap*1.4); if (!alive()) return;
+  undimResidue();
   seq.running = false;
   finishReveal(row, p, pristine);
 }
