@@ -465,7 +465,8 @@ $('recenter').addEventListener('click', () => { follow = true; if (me) map.setVi
 let headFrom = null, heading = null;
 function setPosition(lat, lng, acc){
   me = {lat, lng}; meAcc = acc;
-  if (acc <= 50){ if (!headFrom) headFrom = me; else if (dist(headFrom, me) > 25){ heading = Math.atan2((lng - headFrom.lng)*Math.cos(rad(lat)), lat - headFrom.lat); headFrom = me; } }
+  // Only fixes good to 20 m count, and only a move well beyond the GPS error, so a standing player's drift never sets a direction.
+  if (acc <= 20){ if (!headFrom) headFrom = me; else if (dist(headFrom, me) > Math.max(25, acc*2.5)){ heading = Math.atan2((lng - headFrom.lng)*Math.cos(rad(lat)), lat - headFrom.lat); headFrom = me; } }
   const ll = [lat, lng];
   meMarker.setLatLng(ll); accCircle.setLatLng(ll).setRadius(Math.min(acc, 2000)); reachCircle.setLatLng(ll);
   if (!hadFix){
@@ -476,7 +477,7 @@ function setPosition(lat, lng, acc){
   } else if (follow) map.panTo(ll, {animate:true, duration:.5});
   // Load the next batch early: once the nearest batch center is 300 m away (spots reach about 650 m), centered 200 m ahead.
   if (hadFix && !seeding && seedCenters.length && seedCenters.every(c => dist(c, me) > 300) && Date.now() - lastSeedTry > 20000)
-    seedArea(heading == null ? me : offset(me, 200, heading), false);
+    seedArea(heading == null ? me : offset(me, 200, heading), false, heading != null);
   if (P.mock === 'on') store.set('mockPos', me);
   trackMove(lat, lng, acc);
   updateGps(); refreshNodes();
@@ -598,28 +599,40 @@ function overpassQuery(c, r){
     `(way${h}["highway"~"${ROAD_RE}"];way${h}["railway"~"^(rail|light_rail|tram|subway|narrow_gauge|monorail)$"]["tunnel"!="yes"];` +
     `way${h}["waterway"~"^(river|canal|stream|drain)$"]["tunnel"!~"^(yes|culvert)$"];way${h}["natural"="water"];);out tags geom;`;
 }
-// Both Overpass servers are asked at once and the first good answer wins (the other request is cancelled),
-// with a 20 s cap, instead of trying them one after the other with 30 s each. Timing is kept for logging.
-let lastFetch = null;
+// Ask the server that answered last time first; if it hasn't answered within 4 s (or fails sooner), ask the other one
+// too, and take the first good answer. That keeps most of the speed of asking both at once at about half the load on
+// these free servers. The cap (28 s) sits above the query's own 25 s server limit so slow-but-good answers still land.
+// Overpass reports runtime errors (timeouts, out of memory) as HTTP 200 with a "remark": those count as failures.
+let overpassFirst = store.get('overpassFirst', 0);
 async function fetchArea(c, r){
   const body = 'data=' + encodeURIComponent(overpassQuery(c, r)), t0 = performance.now();
-  const ctls = OVERPASS.map(() => new AbortController()), cap = setTimeout(() => ctls.forEach(k => k.abort()), 20000);
+  const order = [overpassFirst, 1 - overpassFirst].filter(i => OVERPASS[i]);
+  const ctls = OVERPASS.map(() => new AbortController()), cap = setTimeout(() => ctls.forEach(k => k.abort()), 28000);
+  const ask = async i => {
+    const res = await fetch(OVERPASS[i], {method:'POST', body, headers:{'Content-Type':'application/x-www-form-urlencoded'}, signal:ctls[i].signal});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if (!Array.isArray(j.elements)) throw new Error('no elements');
+    if (j.remark && /error|timed out|out of memory/i.test(j.remark)) throw new Error('remark');
+    return {j, i, kb:Math.round((+res.headers.get('content-length') || 0)/1024)};
+  };
+  let hedged = false, hedgeTimer = null;
   try{
-    const win = await Promise.any(OVERPASS.map(async (url, i) => {
-      const res = await fetch(url, {method:'POST', body, headers:{'Content-Type':'application/x-www-form-urlencoded'}, signal:ctls[i].signal});
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const text = await res.text(), j = JSON.parse(text);
-      if (!Array.isArray(j.elements)) throw new Error('no elements');
-      return {j, url, bytes:text.length};
-    }));
+    const win = await new Promise((resolve, reject) => {
+      let running = 0, failed = 0, done = false;
+      const run = k => { running++; ask(order[k]).then(v => { if (!done){ done = true; resolve(v); } },
+        () => { failed++; if (k === 0) hedge(); if (!done && failed === running && (hedged || order.length < 2)){ done = true; reject(new Error('all failed')); } }); };
+      const hedge = () => { if (hedged || order.length < 2) return; hedged = true; clearTimeout(hedgeTimer); run(1); };
+      run(0); hedgeTimer = setTimeout(hedge, 4000);
+    });
     ctls.forEach(k => k.abort());
+    if (win.i !== overpassFirst){ overpassFirst = win.i; store.set('overpassFirst', overpassFirst); }
     const t1 = performance.now(), area = parseArea(win.j.elements, c);
-    lastFetch = {ok:true, fetchMs:Math.round(t1 - t0), parseMs:Math.round(performance.now() - t1), kb:Math.round(win.bytes/1024), server:win.url.split('/')[2], elements:win.j.elements.length};
-    return area;
+    return {area, stats:{ok:true, fetchMs:Math.round(t1 - t0), parseMs:Math.round(performance.now() - t1), kb:win.kb, server:OVERPASS[win.i].split('/')[2], hedged, elements:win.j.elements.length}};
   }catch(err){
-    lastFetch = {ok:false, fetchMs:Math.round(performance.now() - t0)};
-    return null;
-  }finally{ clearTimeout(cap); }
+    ctls.forEach(k => k.abort());
+    return {area:null, stats:{ok:false, fetchMs:Math.round(performance.now() - t0), hedged}};
+  }finally{ clearTimeout(cap); clearTimeout(hedgeTimer); }
 }
 
 /* Local flat projection in meters around the seed center: plenty accurate within a kilometer. */
@@ -761,23 +774,27 @@ function mapNote(text, ms){
   el.textContent = text; el.hidden = false;
   if (ms) noteTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
-async function seedArea(c, fresh){
+async function seedArea(c, fresh, ahead){
   if (seeding) return;
   seeding = true; lastSeedTry = Date.now();
   if (fresh){ nodes = []; seedCenters = []; markers.forEach(m => m.remove()); markers.clear(); }
   const want = fresh ? 15 : 10, R = 650;
   let added = [], area = null;
   if (P.nodeSource !== 'random'){
-    if (fresh) mapNote('Finding places near you…');      // later batches load quietly in the background, ahead of the player
-    area = await fetchArea(c, R);
-    if (fresh) mapNote(null);
+    // Quiet when it's a background load ahead of the player; say so when the map has nothing near them yet
+    // (first launch, or a returning tester opening the app somewhere new).
+    const quiet = !fresh && me && nodes.some(n => n.type !== 'die' && dist(me, n) <= P.vis);
+    if (!quiet) mapNote('Finding places near you…');
+    const got = await fetchArea(c, R); area = got.area;
+    if (!quiet) mapNote(null);
+    var fetchStats = got.stats;
     if (area){
       const places = P.nodeSource === 'osm' ? pickPlaces(area, c, want, nodes) : [];
       const near = nodes.concat(places).filter(n => dist(c, n) <= 200).length;
       const walk = pickWalkSpots(area, c, want - places.length, Math.max(0, 3 - near), nodes.concat(places), R);
       added = places.concat(walk);
-      event('places_fetched', Object.assign({}, lastFetch, {pois:area.pois.length, walkways:area.walks.length, places:places.length, walkSpots:walk.length, fresh, ahead:heading != null && !fresh}));
-    } else event('places_fetched', Object.assign({ok:false, fresh}, lastFetch));
+      event('places_fetched', Object.assign({}, fetchStats, {pois:area.pois.length, walkways:area.walks.length, places:places.length, walkSpots:walk.length, fresh, ahead:!!ahead}));
+    } else event('places_fetched', Object.assign({fresh, ahead:!!ahead}, fetchStats));
   }
   if (added.length < 3){
     added = added.concat(randomNodes(c, (fresh ? 8 : 5) - added.length, nodes.concat(added)));
@@ -791,6 +808,8 @@ async function seedArea(c, fresh){
   added = added.concat(dieSpots);
   nodes = nodes.concat(added); seedCenters.push({lat:c.lat, lng:c.lng});
   if (nodes.length > 150) nodes = nodes.slice(-150);
+  // A seed center whose spots were all trimmed away must not block reloading that area when the player returns.
+  seedCenters = seedCenters.filter(sc => nodes.some(n => dist(sc, n) <= 650));
   store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('seedCenters', seedCenters);
   event('nodes_seeded', {count:added.length, osm:added.filter(n => n.src === 'osm').length, walk:added.filter(n => n.src === 'walk').length, dice:dieSpots.length, fresh});
   seeding = false;
@@ -1516,5 +1535,5 @@ updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
 setTimeout(maybeShowInstallTip, 4000);
-window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get heading(){ return heading; }, get seedCenters(){ return seedCenters; }};
 })();
