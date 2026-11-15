@@ -74,7 +74,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '3.4';
+const APP_V = '3.5';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -504,10 +504,10 @@ function startReal(){
   if (watchId != null) return;
   watchId = navigator.geolocation.watchPosition(pos => {
     if (P.mock === 'on') return;
-    hidePerm(); locState('granted');
+    hidePerm(); locState('granted'); store.set('locOK', true);
     setPosition(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 999);
   }, err => {
-    if (err.code === 1){ stopReal(); showPerm('denied'); locState('denied'); }
+    if (err.code === 1){ stopReal(); store.set('locOK', false); showPerm('denied'); locState('denied'); }
     else { const el = $('gpsChip'); el.className = 'gps bad'; el.textContent = err.code === 3 ? 'Waiting for GPS…' : 'GPS unavailable, retrying…'; }
   }, {enableHighAccuracy:true, maximumAge:3000, timeout:20000});
 }
@@ -517,7 +517,9 @@ async function initLocation(){
   if (!('geolocation' in navigator)) return showPerm('unsupported');
   let st = 'prompt';
   try{ if (navigator.permissions && navigator.permissions.query) st = (await navigator.permissions.query({name:'geolocation'})).state; }catch{}
-  if (st === 'granted') startReal();
+  // iOS Safari reports "prompt" on every launch even after the player allowed location, so once they have allowed it,
+  // start straight away and let iOS ask (or not) instead of putting our own screen in front of it every time.
+  if (st === 'granted' || (st === 'prompt' && store.get('locOK', false))) startReal();
   else if (st === 'denied'){ showPerm('denied'); locState('denied'); }
   else { showPerm('prompt'); locState('prompt'); }
 }
