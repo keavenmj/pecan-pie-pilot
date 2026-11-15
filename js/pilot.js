@@ -74,7 +74,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '3.3';
+const APP_V = '3.4';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -757,15 +757,20 @@ function pickWalkSpots(area, c, count, needNear, taken, r){
     return {id:'w' + Date.now().toString(36) + i, src:'walk', name, kind:q.kind, prov:q.wname ? `First pulled on ${q.wname}` : `First pulled at ${name}`, lat:q.lat, lng:q.lng, coolUntil:0};
   });
 }
-function randomNodes(c, count, taken){
+// Random fill-in spots. When the area's map data is available, every point must pass the same road, rail and water
+// clearance as walkable spots; a spot that can't find clear ground is skipped, never placed unchecked. Without map
+// data (servers unreachable) there is nothing to check against, and the map says the spots are random.
+function randomNodes(c, count, taken, area){
   const used = new Set(taken.map(n => n.name)), names = NODE_NAMES.filter(n => !used.has(n)).sort(() => E.rng() - .5), out = [];
+  const clear = q => !area || clearOf(area, area.pr.fwd(q.lat, q.lng), WALK_CLEAR);
   for (let i = 0; i < count; i++){
     let p = null;
-    for (let tries = 0; tries < 12; tries++){
+    for (let tries = 0; tries < (area ? 60 : 12); tries++){
       const near = taken.concat(out).filter(o => dist(o, c) <= 200).length < 3;
       const q = offset(c, near ? 50 + E.rng()*120 : 150 + E.rng()*450, E.rng()*Math.PI*2);
-      if (taken.concat(out).every(o => dist(o, q) > 45)){ p = q; break; }
+      if (taken.concat(out).every(o => dist(o, q) > 45) && clear(q)){ p = q; break; }
     }
+    if (!p && area) continue;                               // no clear ground found: leave this one out
     if (!p) p = offset(c, 150 + E.rng()*450, E.rng()*Math.PI*2);
     const name = names[i % Math.max(1, names.length)] || 'Scratch Spot';
     out.push({id:'r' + Date.now().toString(36) + i, src:'random', name, kind:'Scratch spot', prov:`First pulled at ${name}`, lat:p.lat, lng:p.lng, coolUntil:0});
@@ -801,13 +806,13 @@ async function seedArea(c, fresh, ahead){
     } else event('places_fetched', Object.assign({fresh, ahead:!!ahead}, got.stats));
   }
   if (added.length < 3){
-    added = added.concat(randomNodes(c, (fresh ? 8 : 5) - added.length, nodes.concat(added)));
+    added = added.concat(randomNodes(c, (fresh ? 8 : 5) - added.length, nodes.concat(added), area));
     if (P.nodeSource !== 'random' && !quiet) mapNote(area ? 'Few walkable places are mapped here, so some nodes are placed at random.' : 'Couldn’t reach map data, so nodes are placed at random for now.', 6000);
   }
   // Dice caches: a few extra spots per area, placed by the same rules, that give a die instead of a card.
   const dieWant = fresh ? 3 : 2;
   let dieSpots = area ? pickWalkSpots(area, c, dieWant, 0, nodes.concat(added), R) : [];
-  if (dieSpots.length < dieWant) dieSpots = dieSpots.concat(randomNodes(c, dieWant - dieSpots.length, nodes.concat(added, dieSpots)));
+  if (dieSpots.length < dieWant) dieSpots = dieSpots.concat(randomNodes(c, dieWant - dieSpots.length, nodes.concat(added, dieSpots), area));
   dieSpots.forEach(d => { d.type = 'die'; d.id = 'd' + d.id; d.kind = 'Dice cache'; });
   added = added.concat(dieSpots);
   const seed = 's' + Date.now().toString(36);
