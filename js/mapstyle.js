@@ -1,14 +1,15 @@
-/* Pecan Pie night map style for MapLibre, drawn from OpenFreeMap vector tiles (OpenMapTiles schema).
-   Design goal: a quiet, always-dark backdrop for someone on foot. Ground and roads stay muted so nodes
-   read first; footpaths, trails and plazas are a little brighter and dashed, since walkable nodes sit on them.
+/* Pecan Pie "Neon" night map style for MapLibre, drawn from OpenFreeMap vector tiles (OpenMapTiles schema).
+   Design goal: an always-dark, playful backdrop for someone on foot. Deep indigo ground, quiet violet roads, an
+   electric shoreline, and mint footpaths. Trails, park paths and pedestrian streets glow; plain sidewalks don't,
+   so downtown doesn't light up as a grid. Gold is left to the nodes ("in reach"), so nothing on the map uses it.
    Business icons are left out on purpose. */
 (() => {
 const C = {
-  ground:'#171b20', residential:'#1a1f25', industrial:'#1c1e23', green:'#18251f', wood:'#16231c', sand:'#23231d',
-  water:'#0f2234', waterLine:'#13304a', building:'#222830', buildingEdge:'#2b323b',
-  minor:'#2c333b', service:'#272d34', major:'#3a424c', motorway:'#46505b', casing:'#111418',
-  path:'#8fa58a', track:'#6c7a5e', cycle:'#7f9fb2', plaza:'#20262a', plazaEdge:'#3b4a3e', rail:'#4a4e59',
-  label:'#8e98a3', labelMinor:'#6f7a85', halo:'#171b20', waterLabel:'#4f6f8c'
+  ground:'#120f22', residential:'#15122a', industrial:'#17142b', green:'#0f2a26', wood:'#0d2722', sand:'#2a2230',
+  water:'#0a1d3d', waterEdge:'#2ad1ff', waterLine:'#1d8fd6', building:'#1d1838', buildingEdge:'#3a2f70',
+  minor:'#2a2449', service:'#221e40', major:'#45285f', motorway:'#5e2a68', casing:'#0b0918',
+  path:'#7dffb8', glow:'#3dffa0', track:'#4fd08f', cycle:'#5ed6ff', plaza:'#1b2436', plazaEdge:'#2f9c74', rail:'#6b5aa8',
+  label:'#b7a8ff', labelMinor:'#7d6fc0', halo:'#120f22', waterLabel:'#5ccfff'
 };
 const FONT = ['Noto Sans Regular'], FONT_IT = ['Noto Sans Italic'];
 const z = (stops) => ['interpolate', ['exponential', 1.6], ['zoom'], ...stops];
@@ -39,7 +40,9 @@ window.PECAN_MAPSTYLE = {
     {id:'park', type:'fill', source:'omt', 'source-layer':'park', paint:{'fill-color':C.green, 'fill-opacity':.85}},
 
     // Water
-    {id:'water', type:'fill', source:'omt', 'source-layer':'water', filter:notTunnel, paint:{'fill-color':C.water}},
+    {id:'water', type:'fill', source:'omt', 'source-layer':'water', filter:notTunnel, paint:{'fill-color':C.water, 'fill-outline-color':C.waterEdge}},
+    {id:'water-glow', type:'line', source:'omt', 'source-layer':'water', filter:notTunnel,
+      paint:{'line-color':C.waterEdge, 'line-width':6, 'line-blur':6, 'line-opacity':.3}},
     {id:'waterway', type:'line', source:'omt', 'source-layer':'waterway', filter:notTunnel,
       paint:{'line-color':C.waterLine, 'line-width':z([10, .5, 18, 6])}},
 
@@ -70,12 +73,17 @@ window.PECAN_MAPSTYLE = {
     {id:'rail', type:'line', source:'omt', 'source-layer':'transportation', minzoom:11, filter:['all', isLine, notTunnel, cls('rail', 'transit')],
       paint:{'line-color':C.rail, 'line-width':z([11, .6, 18, 2.5]), 'line-dasharray':[3, 2]}},
 
-    // Walkable ways: brighter, dashed, drawn above roads so they read clearly
+    // Walkable ways: brighter, dashed, drawn above roads so they read clearly. Trails, park paths and pedestrian
+    // streets get a soft glow underneath; sidewalks (mapped as plain footways) don't, to keep city blocks calm.
+    {id:'path-glow', type:'line', source:'omt', 'source-layer':'transportation', minzoom:14,
+      filter:['all', isLine, notTunnel, ['any', cls('track'), ['all', cls('path'), ['match', ['get', 'subclass'], ['path', 'bridleway', 'pedestrian'], true, false]]]],
+      layout:{'line-cap':'round', 'line-join':'round'},
+      paint:{'line-color':C.glow, 'line-width':z([14, 3, 18, 12]), 'line-blur':z([14, 3, 18, 10]), 'line-opacity':.35}},
     {id:'track', type:'line', source:'omt', 'source-layer':'transportation', minzoom:13, filter:['all', isLine, notTunnel, cls('track')],
       paint:{'line-color':C.track, 'line-width':z([13, .6, 18, 2.4]), 'line-dasharray':[3, 2]}},
     {id:'path', type:'line', source:'omt', 'source-layer':'transportation', minzoom:14,
       filter:['all', isLine, notTunnel, cls('path'), ['!=', ['get', 'subclass'], 'cycleway']],
-      paint:{'line-color':C.path, 'line-opacity':.9, 'line-width':z([14, .7, 18, 2.6]), 'line-dasharray':[2, 1.3]}},
+      paint:{'line-color':C.path, 'line-opacity':.85, 'line-width':z([14, .7, 18, 2.6]), 'line-dasharray':[2, 1.3]}},
     {id:'cycleway', type:'line', source:'omt', 'source-layer':'transportation', minzoom:14,
       filter:['all', isLine, notTunnel, cls('path'), ['==', ['get', 'subclass'], 'cycleway']],
       paint:{'line-color':C.cycle, 'line-opacity':.8, 'line-width':z([14, .7, 18, 2.4]), 'line-dasharray':[2, 1.3]}},
