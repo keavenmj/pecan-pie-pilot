@@ -62,9 +62,8 @@ const saveP = () => store.set('pilot', P);
 // Card spots now recharge in 2 hours (was 4). Settings saved before the change still say 4, so move them once.
 if ((P.coolV || 0) < 2){ if (P.cool === 4) P.cool = 2; P.coolV = 2; saveP(); }
 
-const NODES_V = 4;                                              // bump to reseed everyone after a node-format change
+const NODES_V = 5;                                              // bump to reseed everyone after a node-format change (5: shared-world sectors)
 let nodes = store.get('nodesV', 0) === NODES_V ? store.get('nodes', null) : null;
-let seedCenters = store.get('seedCenters', []);
 let collection = store.get('collection', []);
 let events = store.get('events', []);
 let daily = store.get('daily', {last:0});
@@ -74,7 +73,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '3.6';
+const APP_V = '3.7';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -473,14 +472,9 @@ function setPosition(lat, lng, acc){
     hadFix = true;
     accCircle.addTo(map); reachCircle.addTo(map); meMarker.addTo(map);
     map.setView(ll, 17);
-    if (!nodes || !nodes.length || !seedCenters.length) seedArea(me, true);
+    if (!nodes) nodes = [];
   } else if (follow) map.panTo(ll, {animate:true, duration:.5});
-  // Load the next batch early: once the nearest batch center is 300 m away (spots reach about 650 m), centered 200 m ahead.
-  if (hadFix && !seeding && seedCenters.length && seedCenters.every(c => dist(c, me) > 300) && Date.now() - lastSeedTry > 20000)
-  {
-    const topUp = heading != null && nodes.some(n => n.type !== 'die' && dist(me, n) <= P.vis);   // an empty map loads around the player
-    seedArea(topUp ? offset(me, 200, heading) : me, false, topUp);
-  }
+  ensureSectors();                                         // load any sector the player could now see a spot in
   if (P.mock === 'on') store.set('mockPos', me);
   trackMove(lat, lng, acc);
   updateGps(); refreshNodes();
@@ -571,263 +565,70 @@ function hidePerm(){ $('permScreen').hidden = true; }
 $('permSkip').addEventListener('click', () => showView('vCollection'));
 
 /* ================= Nodes ================= */
-/* Nodes come from public places in OpenStreetMap, with random spots only as a fallback. */
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
-const SKIP_HISTORIC = new Set(['memorial', 'tomb', 'grave', 'wayside_shrine', 'wayside_cross', 'cemetery']);
-const AMENITY_KIND = {library:['Library', 7], fountain:['Fountain', 8], clock:['Public clock', 6], arts_centre:['Arts center', 6], theatre:['Theater', 6],
-  cinema:['Cinema', 5], community_centre:['Community center', 5], townhall:['Town hall', 6], marketplace:['Market', 6], cafe:['Cafe', 5],
-  ice_cream:['Ice cream shop', 5], post_office:['Post office', 4]};
-function kindOf(t){
-  if (t.access === 'private' || t.access === 'no' || t.access === 'customers') return null;
-  if (t.man_made === 'lighthouse') return ['Lighthouse', 10];
-  if (t.man_made === 'pier') return ['Pier', 8];
-  if (t.tourism === 'artwork') return ['Public art', 9];
-  if (t.tourism === 'viewpoint') return ['Viewpoint', 9];
-  if (t.tourism === 'museum') return ['Museum', 7];
-  if (t.tourism === 'attraction') return ['Landmark', 6];
-  if (t.historic && !SKIP_HISTORIC.has(t.historic)) return ['Historic site', 8];
-  if (t.leisure === 'park') return ['Park', 7];
-  if (t.leisure === 'garden') return ['Garden', 6];
-  if (t.amenity && AMENITY_KIND[t.amenity]) return AMENITY_KIND[t.amenity];
-  return null;
-}
-/* One request per area: public places (centers) plus walkways and hazards (geometry). */
-const WALK_RE = '^(footway|path|pedestrian|cycleway|bridleway|track)$';
-const ROAD_RE = '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road|busway)$';
-function overpassQuery(c, r){
-  const a = `(around:${r},${c.lat.toFixed(6)},${c.lng.toFixed(6)})`, h = `(around:${r + 60},${c.lat.toFixed(6)},${c.lng.toFixed(6)})`;
-  return `[out:json][timeout:25];` +
-    `(nwr${a}["tourism"~"^(artwork|viewpoint|museum|attraction)$"];nwr${a}["historic"];` +
-    `nwr${a}["leisure"~"^(park|garden)$"];nwr${a}["man_made"~"^(lighthouse|pier)$"];` +
-    `nwr${a}["amenity"~"^(library|fountain|clock|arts_centre|theatre|cinema|community_centre|townhall|marketplace|cafe|ice_cream|post_office)$"];);out center tags 400;` +
-    `way${a}["highway"~"${WALK_RE}"]["footway"!~"^(sidewalk|crossing)$"]["access"!~"^(private|no|customers)$"]["tunnel"!="yes"]["indoor"!="yes"];out tags geom 1500;` +
-    `(way${h}["highway"~"${ROAD_RE}"];way${h}["railway"~"^(rail|light_rail|tram|subway|narrow_gauge|monorail)$"]["tunnel"!="yes"];` +
-    `way${h}["waterway"~"^(river|canal|stream|drain)$"]["tunnel"!~"^(yes|culvert)$"];way${h}["natural"="water"];);out tags geom;`;
-}
-// Ask the server that answered last time first; if it hasn't answered within 4 s (or fails sooner), ask the other one
-// too, and take the first good answer. That keeps most of the speed of asking both at once at about half the load on
-// these free servers. The cap (28 s) sits above the query's own 25 s server limit so slow-but-good answers still land.
-// Overpass reports runtime errors (timeouts, out of memory) as HTTP 200 with a "remark": those count as failures.
-let overpassFirst = store.get('overpassFirst', 0);
-if (!(Number.isInteger(overpassFirst) && OVERPASS[overpassFirst])) overpassFirst = 0;   // a bad stored value must not disable the backup
-async function fetchArea(c, r){
-  const body = 'data=' + encodeURIComponent(overpassQuery(c, r)), t0 = performance.now();
-  const order = [overpassFirst].concat(OVERPASS.map((_, i) => i).filter(i => i !== overpassFirst));
-  const ctls = [], timers = [];
-  const ask = async i => {
-    const ctl = new AbortController(); ctls.push(ctl); timers.push(setTimeout(() => ctl.abort(), 28000));   // each server gets its own full 28 s
-    const res = await fetch(OVERPASS[i], {method:'POST', body, headers:{'Content-Type':'application/x-www-form-urlencoded'}, signal:ctl.signal});
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text(), kb = Math.round(text.length/1024), j = JSON.parse(text);   // measured here: Overpass streams without a size header
-    if (!Array.isArray(j.elements)) throw new Error('no elements');
-    if (j.remark && /error|timed out|out of memory/i.test(j.remark)) throw new Error('remark');
-    return {j, i, kb};
-  };
-  // First success wins; it fails only once every server that was asked has failed.
-  let started = 0, hedgeTimer = null;
-  try{
-    const win = await new Promise((resolve, reject) => {
-      let failed = 0;
-      const start = () => { if (started >= order.length) return; const k = started++;
-        ask(order[k]).then(resolve, () => { failed++; start(); if (failed === started && started === order.length) reject(new Error('all failed')); }); };
-      start(); hedgeTimer = setTimeout(start, 4000);               // the backup starts at 4 s, or as soon as the first fails
-    });
-    ctls.forEach(k => k.abort());
-    if (win.i !== overpassFirst){ overpassFirst = win.i; store.set('overpassFirst', overpassFirst); }
-    const t1 = performance.now(), area = parseArea(win.j.elements, c);
-    return {area, stats:{ok:true, fetchMs:Math.round(t1 - t0), parseMs:Math.round(performance.now() - t1), kb:win.kb, server:OVERPASS[win.i].split('/')[2], hedged:started > 1, elements:win.j.elements.length}};
-  }catch(err){
-    ctls.forEach(k => k.abort());
-    return {area:null, stats:{ok:false, fetchMs:Math.round(performance.now() - t0), hedged:started > 1}};
-  }finally{ clearTimeout(hedgeTimer); timers.forEach(clearTimeout); }
-}
-
-/* Local flat projection in meters around the seed center: plenty accurate within a kilometer. */
-function projector(c){
-  const kx = 111320*Math.cos(rad(c.lat)), ky = 110540;
-  return {fwd:(lat, lng) => ({x:(lng - c.lng)*kx, y:(lat - c.lat)*ky}), back:(x, y) => ({lat:c.lat + y/ky, lng:c.lng + x/kx})};
-}
-const CELL = 50;
-function parseArea(elements, c){
-  const pr = projector(c), pois = [], walks = [], segs = new Map(), polys = [];
-  const addSeg = (a, b, t) => {
-    const x0 = Math.floor(Math.min(a.x, b.x)/CELL) - 1, x1 = Math.floor(Math.max(a.x, b.x)/CELL) + 1;
-    const y0 = Math.floor(Math.min(a.y, b.y)/CELL) - 1, y1 = Math.floor(Math.max(a.y, b.y)/CELL) + 1;
-    const sg = {a, b, t};
-    for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++){ const k = gx + ',' + gy; let l = segs.get(k); if (!l) segs.set(k, l = []); l.push(sg); }
-  };
-  for (const el of elements){
-    const t = el.tags || {};
-    if (!el.geometry){ pois.push(el); continue; }
-    const pts = el.geometry.filter(g => g && g.lat != null).map(g => pr.fwd(g.lat, g.lon));
-    if (pts.length < 2) continue;
-    let kind = null;
-    if (t.highway && new RegExp(WALK_RE).test(t.highway) && t.footway !== 'sidewalk' && t.footway !== 'crossing') { walks.push({pts, t}); continue; }
-    if (t.highway && new RegExp(ROAD_RE).test(t.highway)) kind = 'road';
-    else if (t.railway) kind = 'rail';
-    else if (t.waterway) kind = 'waterway';
-    else if (t.natural === 'water'){ kind = 'water'; const first = pts[0], last = pts[pts.length - 1]; if (Math.hypot(first.x - last.x, first.y - last.y) < 1) polys.push(pts); }
-    if (!kind) continue;
-    for (let i = 1; i < pts.length; i++) addSeg(pts[i - 1], pts[i], kind);
-  }
-  return {pr, pois, walks, segs, polys};
-}
-function segDist(p, a, b){
-  const dx = b.x - a.x, dy = b.y - a.y, L = dx*dx + dy*dy;
-  let k = L ? ((p.x - a.x)*dx + (p.y - a.y)*dy)/L : 0; k = k < 0 ? 0 : k > 1 ? 1 : k;
-  return Math.hypot(p.x - a.x - k*dx, p.y - a.y - k*dy);
-}
-function inPoly(p, poly){
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++){
-    const a = poly[i], b = poly[j];
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x)*(p.y - a.y)/(b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
-}
-// Distance limits in meters from each hazard; a point must clear all of them.
-const WALK_CLEAR = {road:15, rail:15, waterway:8, water:5, inWater:true};
-const POI_CLEAR = {road:6, rail:10, waterway:0, water:0, inWater:true};
-function clearOf(area, p, lim){
-  const gx = Math.floor(p.x/CELL), gy = Math.floor(p.y/CELL);
-  for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++){
-    const l = area.segs.get(ix + ',' + iy); if (!l) continue;
-    for (const sg of l){ const m = lim[sg.t]; if (m && segDist(p, sg.a, sg.b) < m) return false; }
-  }
-  if (lim.inWater) for (const poly of area.polys) if (inPoly(p, poly)) return false;
-  return true;
-}
-function nearestRoad(area, p){
-  let best = 60; const gx = Math.floor(p.x/CELL), gy = Math.floor(p.y/CELL);
-  for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++){
-    const l = area.segs.get(ix + ',' + iy); if (!l) continue;
-    for (const sg of l) if (sg.t === 'road') best = Math.min(best, segDist(p, sg.a, sg.b));
-  }
-  return best;
-}
-
+/* Spots come from the shared world (js/world.js): the map is cut into ~1 km sectors, and every phone builds the same
+   spots for a sector from the same pinned map tiles and seeded randomness. This file only decides which sectors to
+   load, merges them into the player's list, and keeps per-player state (cooldowns, bingo balls) on the spot by id. */
+const World = window.PecanWorld;
 const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
-function spacedFrom(list, q){ return list.every(o => dist(o, q) > 45); }
-function pickPlaces(area, c, want, taken){
-  const cands = [];
-  for (const el of area.pois){
-    const t = el.tags || {}, k = kindOf(t); if (!k) continue;
-    const lat = el.lat != null ? el.lat : el.center && el.center.lat, lng = el.lon != null ? el.lon : el.center && el.center.lon;
-    if (lat == null || lng == null) continue;
-    const osm = el.type[0] + el.id; if (taken.some(n => n.osm === osm)) continue;
-    const xy = area.pr.fwd(lat, lng), byWater = k[0] === 'Pier' || k[0] === 'Lighthouse' || k[0] === 'Viewpoint';
-    if (!clearOf(area, xy, byWater ? Object.assign({}, POI_CLEAR, {inWater:false}) : POI_CLEAR)) continue;   // e.g. art in a road median
-    const q = {osm, lat, lng, kind:k[0], name:t.name || '', score:k[1] + (t.name ? 3 : 0) + E.rng()*1.5};
-    q.d = dist(c, q); cands.push(q);
-  }
-  cands.sort((a, b) => b.score - a.score);
-  const out = [];
-  for (const q of cands.filter(q => q.d <= 200)){ if (out.length >= 3) break; if (spacedFrom(taken.concat(out), q)) out.push(q); }
-  for (const q of cands){ if (out.length >= want) break; if (!out.includes(q) && spacedFrom(taken.concat(out), q)) out.push(q); }
-  return out.map(q => ({id:'o' + q.osm, osm:q.osm, src:'osm', name:q.name || q.kind, kind:q.kind,
-    prov:q.name ? `First pulled at ${q.name}` : `First pulled at ${article(q.kind)} ${q.kind.toLowerCase()}`, lat:q.lat, lng:q.lng, coolUntil:0}));
-}
-const WALK_KIND = {footway:['Footpath', 1], path:['Trail', 1], pedestrian:['Plaza', 2], cycleway:['Bike path', 0], bridleway:['Bridleway', 0], track:['Track', -1]};
-function pickWalkSpots(area, c, count, needNear, taken, r){
-  if (count <= 0 && needNear <= 0) return [];
-  const cands = [];
-  area.walks.forEach((w, wi) => {
-    const [kind, base] = WALK_KIND[w.t.highway] || ['Footpath', 0];
-    let carry = 15;                                                   // first sample 15 m in, then every 30 m
-    for (let i = 1; i < w.pts.length; i++){
-      const a = w.pts[i - 1], b = w.pts[i], L = Math.hypot(b.x - a.x, b.y - a.y);
-      let s = carry;
-      for (; s < L; s += 30){
-        const p = {x:a.x + (b.x - a.x)*s/L, y:a.y + (b.y - a.y)*s/L};
-        if (Math.hypot(p.x, p.y) > r || !clearOf(area, p, WALK_CLEAR)) continue;
-        const ll = area.pr.back(p.x, p.y);
-        cands.push({lat:ll.lat, lng:ll.lng, d:Math.hypot(p.x, p.y), kind, wname:w.t.name || '', wi,
-          score:base + (w.t.name ? 2 : 0) + Math.min(2, nearestRoad(area, p)/30) + E.rng()*2});
-      }
-      carry = s - L;
-    }
-  });
-  cands.sort((a, b) => b.score - a.score);
-  const out = [], all = () => taken.concat(out), perWay = new Map(), total = Math.max(count, needNear);
-  const take = (q, cap) => { const n = perWay.get(q.wi) || 0; if (n >= cap || out.includes(q) || !spacedFrom(all(), q)) return; out.push(q); perWay.set(q.wi, n + 1); };
-  for (const q of cands.filter(q => q.d <= 200)){ if (out.length >= needNear) break; take(q, 3); }
-  for (const q of cands){ if (out.length >= total) break; take(q, 3); }          // at most three per path...
-  for (const q of cands){ if (out.length >= total) break; take(q, Infinity); }   // ...unless nothing else fits
-  const used = new Set(taken.map(n => n.name)), names = NODE_NAMES.filter(n => !used.has(n)).sort(() => E.rng() - .5);
-  return out.map((q, i) => {
-    const name = q.wname || names[i % Math.max(1, names.length)] || 'Scratch Spot';
-    return {id:'w' + Date.now().toString(36) + i, src:'walk', name, kind:q.kind, prov:q.wname ? `First pulled on ${q.wname}` : `First pulled at ${name}`, lat:q.lat, lng:q.lng, coolUntil:0};
-  });
-}
-// Random fill-in spots. When the area's map data is available, every point must pass the same road, rail and water
-// clearance as walkable spots; a spot that can't find clear ground is skipped, never placed unchecked. Without map
-// data (servers unreachable) there is nothing to check against, and the map says the spots are random.
-function randomNodes(c, count, taken, area){
-  const used = new Set(taken.map(n => n.name)), names = NODE_NAMES.filter(n => !used.has(n)).sort(() => E.rng() - .5), out = [];
-  const clear = q => !area || clearOf(area, area.pr.fwd(q.lat, q.lng), WALK_CLEAR);
-  for (let i = 0; i < count; i++){
-    let p = null;
-    for (let tries = 0; tries < (area ? 60 : 12); tries++){
-      const near = taken.concat(out).filter(o => dist(o, c) <= 200).length < 3;
-      const q = offset(c, near ? 50 + E.rng()*120 : 150 + E.rng()*450, E.rng()*Math.PI*2);
-      if (taken.concat(out).every(o => dist(o, q) > 45) && clear(q)){ p = q; break; }
-    }
-    if (!p && area) continue;                               // no clear ground found: leave this one out
-    if (!p) p = offset(c, 150 + E.rng()*450, E.rng()*Math.PI*2);
-    const name = names[i % Math.max(1, names.length)] || 'Scratch Spot';
-    out.push({id:'r' + Date.now().toString(36) + i, src:'random', name, kind:'Scratch spot', prov:`First pulled at ${name}`, lat:p.lat, lng:p.lng, coolUntil:0});
-  }
-  return out;
-}
-let seeding = false, lastSeedTry = 0, noteTimer = null;
+let sectorsDone = store.get('sectorsDone', {});            // sector id -> snapshot it was built from (only full builds)
+let building = false, lastBuildFail = 0, noteTimer = null;
 function mapNote(text, ms){
   const el = $('mapNote'); clearTimeout(noteTimer);
   if (!text){ el.hidden = true; return; }
   el.textContent = text; el.hidden = false;
   if (ms) noteTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
-async function seedArea(c, fresh, ahead){
-  if (seeding) return;
-  seeding = true; lastSeedTry = Date.now();
-  if (fresh){ nodes = []; seedCenters = []; markers.forEach(m => m.remove()); markers.clear(); }
-  const want = fresh ? 15 : 10, R = 650;
-  let added = [], area = null;
-  // Quiet when it's a background load with spots already around the player: no notes at all. Speak up when the map
-  // has nothing near them yet (first launch, or a returning tester opening the app somewhere new).
-  const quiet = !fresh && me && nodes.some(n => n.type !== 'die' && dist(me, n) <= P.vis);
-  if (P.nodeSource !== 'random'){
-    if (!quiet) mapNote('Finding places near you…');
-    const got = await fetchArea(c, R); area = got.area;
-    if (!quiet) mapNote(null);
-    if (area){
-      const places = P.nodeSource === 'osm' ? pickPlaces(area, c, want, nodes) : [];
-      const near = nodes.concat(places).filter(n => dist(c, n) <= 200).length;
-      const walk = pickWalkSpots(area, c, want - places.length, Math.max(0, 3 - near), nodes.concat(places), R);
-      added = places.concat(walk);
-      event('places_fetched', Object.assign({}, got.stats, {pois:area.pois.length, walkways:area.walks.length, places:places.length, walkSpots:walk.length, fresh, ahead:!!ahead}));
-    } else event('places_fetched', Object.assign({fresh, ahead:!!ahead}, got.stats));
+const cardsNear = () => (nodes || []).some(n => n.type !== 'die' && me && dist(me, n) <= P.vis);
+// Load every sector the player could see a spot in. Cheap to call on every fix: it returns at once when all are loaded.
+async function ensureSectors(){
+  if (!me || building) return;
+  const want = World.sectorsNear(me.lat, me.lng, P.vis + 150).filter(id => sectorsDone[id] !== World.snapshot);
+  if (!want.length) return;
+  if (Date.now() - lastBuildFail < 20000) return;          // offline or failing: try again in a little while
+  building = true;
+  const quiet = cardsNear();                               // background load with spots already around: no notes
+  if (!quiet) mapNote('Finding places near you…');
+  let failed = false, randomOnly = false;
+  for (const sid of want){
+    let res;
+    try{ res = await World.buildSector(sid, {mode:P.nodeSource, names:NODE_NAMES}); }
+    catch(err){ res = {ok:false, nodes:[], stats:{ok:false, error:String(err && err.message || err).slice(0, 80)}}; }
+    mergeSector(sid, res);
+    if (res.ok) sectorsDone[sid] = World.snapshot; else failed = true;
+    if (res.stats.random) randomOnly = true;
+    // No sector id or coordinates in the log: counts and timings only.
+    event('sector_built', Object.assign({}, res.stats, {mode:P.nodeSource}));
   }
-  if (added.length < 3){
-    added = added.concat(randomNodes(c, (fresh ? 8 : 5) - added.length, nodes.concat(added), area));
-    if (P.nodeSource !== 'random' && !quiet) mapNote(area ? 'Few walkable places are mapped here, so some nodes are placed at random.' : 'Couldn’t reach map data, so nodes are placed at random for now.', 6000);
-  }
-  // Dice caches: a few extra spots per area, placed by the same rules, that give a die instead of a card.
-  const dieWant = fresh ? 3 : 2;
-  let dieSpots = area ? pickWalkSpots(area, c, dieWant, 0, nodes.concat(added), R) : [];
-  if (dieSpots.length < dieWant) dieSpots = dieSpots.concat(randomNodes(c, dieWant - dieSpots.length, nodes.concat(added, dieSpots), area));
-  dieSpots.forEach(d => { d.type = 'die'; d.id = 'd' + d.id; d.kind = 'Dice cache'; });
-  added = added.concat(dieSpots);
-  const seed = 's' + Date.now().toString(36);
-  added.forEach(n => { n.seed = seed; });                  // each spot remembers its batch
-  nodes = nodes.concat(added); seedCenters.push({lat:c.lat, lng:c.lng, id:seed});
-  if (nodes.length > 150) nodes = nodes.slice(-150);
-  // A batch whose own spots were all trimmed away must not block reloading that area when the player returns.
-  // (Centers saved before batches had ids fall back to "any spot within 650 m".)
-  seedCenters = seedCenters.filter(sc => sc.id ? nodes.some(n => n.seed === sc.id) : nodes.some(n => dist(sc, n) <= 650));
-  store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('seedCenters', seedCenters);
-  event('nodes_seeded', {count:added.length, osm:added.filter(n => n.src === 'osm').length, walk:added.filter(n => n.src === 'walk').length, dice:dieSpots.length, fresh});
-  seeding = false;
+  if (failed) lastBuildFail = Date.now();
+  trimNodes();
+  store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('sectorsDone', sectorsDone);
+  building = false;
+  if (!quiet) mapNote(failed ? 'Couldn’t reach map data, so nodes are placed at random for now.'
+    : randomOnly && P.nodeSource !== 'random' ? 'Few walkable places are mapped here, so some nodes are placed at random.' : null, failed || randomOnly ? 6000 : 0);
   refreshNodes();
+}
+// Replace a sector's spots with a fresh build, keeping per-player state for spots that are still there (same id) and
+// keeping any spot that is cooling down until its cooldown ends.
+function mergeSector(sid, res){
+  const now = Date.now(), old = new Map((nodes || []).filter(n => n.sector === sid).map(n => [n.id, n]));
+  const fresh = res.nodes.map(n => { const o = old.get(n.id); return o ? Object.assign(n, {coolUntil:o.coolUntil || 0, ball:o.ball}) : n; });
+  const ids = new Set(fresh.map(n => n.id));
+  const keep = [...old.values()].filter(n => !ids.has(n.id) && (n.coolUntil > now || pending['node:' + n.id]));
+  nodes = (nodes || []).filter(n => n.sector !== sid).concat(fresh, keep);
+}
+// Forget sectors well away from the player (they rebuild identically on return), but never a spot mid-cooldown or
+// with a scratch in progress.
+function trimNodes(){
+  if (!me) return;
+  const now = Date.now(), near = new Set(World.sectorsNear(me.lat, me.lng, 2500));
+  nodes = (nodes || []).filter(n => near.has(n.sector) || n.coolUntil > now || pending['node:' + n.id]);
+  for (const sid of Object.keys(sectorsDone)) if (!near.has(sid)) delete sectorsDone[sid];
+}
+function reseedNodes(){
+  nodes = (nodes || []).filter(n => n.coolUntil > Date.now() || pending['node:' + n.id]);
+  sectorsDone = {}; lastBuildFail = 0;
+  markers.forEach(m => m.remove()); markers.clear();
+  ensureSectors();
 }
 
 const markers = new Map();
@@ -1433,7 +1234,7 @@ $('dMock').addEventListener('change', () => {
 });
 $('dWalk').value = String(P.walk);
 $('dWalk').addEventListener('change', () => { P.walk = $('dWalk').value; saveP(); });
-$('dReseed').addEventListener('click', () => { if (me){ seedArea(me, true); $('dNote').textContent = 'Reseeding nodes around you.'; } else $('dNote').textContent = 'No location yet.'; });
+$('dReseed').addEventListener('click', () => { if (me){ reseedNodes(); $('dNote').textContent = 'Rebuilding nodes around you.'; } else $('dNote').textContent = 'No location yet.'; });
 $('dSource').value = P.nodeSource;
 $('dSource').addEventListener('change', () => { P.nodeSource = $('dSource').value; saveP(); $('dNote').textContent = 'Tap Reseed nodes around me to apply.'; });
 $('dReady').addEventListener('click', () => { if (nodes){ nodes.forEach(n => { n.coolUntil = 0; delete n.ball; }); store.set('nodes', nodes); refreshNodes(); $('dNote').textContent = 'All nodes ready.'; } });
@@ -1550,5 +1351,5 @@ updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
 setTimeout(maybeShowInstallTip, 4000);
-window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, seedArea, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get heading(){ return heading; }, get seedCenters(){ return seedCenters; }};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, ensureSectors, reseedNodes, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get heading(){ return heading; }, get sectorsDone(){ return sectorsDone; }, world:World};
 })();
