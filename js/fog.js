@@ -7,20 +7,33 @@
    raw GPS trail, and it is never logged. The caller decides what counts as a walked step (the same filters as
    Distance: walking pace, decent accuracy).
 
-   Styles: 'blur' (unexplored ground blurred, washed out and tinted), 'plain' (a dark veil, for phones where the blur
-   stutters), 'off'. */
+   Styles:
+   - 'plain' (default): a dark veil painted straight onto a canvas. A canvas repaint lands in one frame, so nothing
+     flickers when the fog redraws on each GPS fix.
+   - 'blur' (experimental): unexplored ground blurred and washed out, using a CSS backdrop filter cut by a mask image.
+     Safari decodes a new mask image a moment after it is set, which flickered in 3.8, so the next mask is decoded
+     first and swapped in on a second, double-buffered layer.
+   - 'off'.
+
+   Zooming: like Leaflet's image overlays, the fog is anchored to map coordinates. It stretches with pinch zooms and
+   rides the zoom animation, then repaints sharp when the zoom ends. */
 (() => {
 'use strict';
-const STEP = 8, TRAIL_R = 40, LANTERN_R = 100, MAX_CELLS = 20000, RES = 0.5, PAD = 0.5;
+// PAD: the fog reaches a full screen past each edge, so a one-level zoom out (half size) still covers the screen.
+const STEP = 8, TRAIL_R = 40, LANTERN_R = 100, MAX_CELLS = 20000, RES = 0.5, PAD = 1;
+const VEIL = 'rgba(9,6,22,.84)';
 const keyOf = (lat, lng) => Math.round(lat*1e4) + ',' + Math.round(lng*1e4);
 const cellLL = k => { const [a, b] = k.split(','); return [a/1e4, b/1e4]; };
 
 function create(map, opts){
   const load = opts.load || (() => []), save = opts.save || (() => {}), onPerf = opts.onPerf || (() => {});
-  let style = opts.style || 'blur', me = null, cells = new Set(load()), saveTimer = null;
+  let style = opts.style || 'plain', me = null, cells = new Set(load()), saveTimer = null;
   const pane = map.createPane('fog'); pane.style.zIndex = 390; pane.style.pointerEvents = 'none';
-  const veil = document.createElement('div'); veil.className = 'fog-veil'; pane.appendChild(veil);
-  const cv = document.createElement('canvas'), g = cv.getContext('2d');
+  const el = (tag, cls) => { const e = document.createElement(tag); e.className = cls + ' leaflet-zoom-animated'; e.hidden = true; pane.appendChild(e); return e; };
+  const sheet = el('canvas', 'fog-sheet');                         // plain style: the visible canvas itself
+  const veils = [el('div', 'fog-veil'), el('div', 'fog-veil')];    // blur style: two layers, one showing, one loading
+  let front = 0, maskJob = 0, maskUrl = [null, null];
+  const work = document.createElement('canvas'), wg = work.getContext('2d');
   const perf = [];
 
   function persist(){
@@ -31,19 +44,20 @@ function create(map, opts){
       save(list);
     }, 1500);
   }
-  function draw(){
-    if (style === 'off'){ veil.hidden = true; return; }
-    veil.hidden = false;
-    veil.className = 'fog-veil' + (style === 'plain' ? ' plain' : '');
-    const t0 = performance.now(), size = map.getSize();
-    // The veil reaches half a screen past each edge, so panning never shows a clear strip before the redraw.
-    const px = Math.round(size.x*PAD), py = Math.round(size.y*PAD), w = size.x + 2*px, h = size.y + 2*py;
-    const origin = map.containerPointToLayerPoint([-px, -py]);
-    L.DomUtil.setPosition(veil, origin);
-    veil.style.width = w + 'px'; veil.style.height = h + 'px';
-    cv.width = Math.max(1, Math.round(w*RES)); cv.height = Math.max(1, Math.round(h*RES));
+  // Place an element over the map area it was painted for (by its stored corners), at the current zoom.
+  function place(e){
+    if (!e._nw) return;
+    const tl = map.latLngToLayerPoint(e._nw), br = map.latLngToLayerPoint(e._se);
+    L.DomUtil.setPosition(e, tl);
+    e.style.width = (br.x - tl.x) + 'px'; e.style.height = (br.y - tl.y) + 'px';
+  }
+  // Paint the fog for the current view (plus half a screen each side) onto a canvas: fill, then cut the holes.
+  function paint(canvas, fill){
+    const size = map.getSize(), px = Math.round(size.x*PAD), py = Math.round(size.y*PAD), w = size.x + 2*px, h = size.y + 2*py;
+    canvas.width = Math.max(1, Math.round(w*RES)); canvas.height = Math.max(1, Math.round(h*RES));
+    const g = canvas.getContext('2d');
     g.setTransform(RES, 0, 0, RES, 0, 0);
-    g.globalCompositeOperation = 'source-over'; g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over'; g.fillStyle = fill; g.fillRect(0, 0, w, h);
     const mpp = map.distance(map.containerPointToLatLng([0, size.y/2]), map.containerPointToLatLng([100, size.y/2]))/100 || 1;
     const hole = (lat, lng, meters) => {
       const c = map.latLngToContainerPoint([lat, lng]), x = c.x + px, y = c.y + py, r = meters/mpp;
@@ -56,16 +70,51 @@ function create(map, opts){
     const b = map.getBounds().pad(PAD + .2), s = b.getSouth(), n = b.getNorth(), we = b.getWest(), e = b.getEast();
     for (const k of cells){ const [lat, lng] = cellLL(k); if (lat >= s && lat <= n && lng >= we && lng <= e) hole(lat, lng, TRAIL_R); }
     if (me) hole(me.lat, me.lng, LANTERN_R);
-    const url = 'url(' + cv.toDataURL() + ')';
-    veil.style.webkitMaskImage = url; veil.style.maskImage = url;
-    veil.style.webkitMaskSize = '100% 100%'; veil.style.maskSize = '100% 100%';
+    return {nw:map.containerPointToLatLng([-px, -py]), se:map.containerPointToLatLng([size.x + px, size.y + py])};
+  }
+  function draw(){
+    const t0 = performance.now();
+    if (style === 'off'){ sheet.hidden = true; veils.forEach(v => { v.hidden = true; }); return; }
+    if (style === 'plain'){
+      veils.forEach(v => { v.hidden = true; });
+      const box = paint(sheet, VEIL);
+      sheet._nw = box.nw; sheet._se = box.se; place(sheet); sheet.hidden = false;
+    } else {
+      // The canvas veil stays up until the first blurred layer is actually showing, so switching never leaves a gap.
+      const box = paint(work, '#000'), job = ++maskJob, back = 1 - front;
+      work.toBlob(blob => {
+        if (!blob || job !== maskJob) return;
+        const url = URL.createObjectURL(blob), img = new Image();
+        img.src = url;
+        img.decode().catch(() => {}).then(() => {
+          if (job !== maskJob){ URL.revokeObjectURL(url); return; }
+          const v = veils[back], m = `url(${url})`;
+          v.style.webkitMaskImage = m; v.style.maskImage = m; v.style.webkitMaskSize = '100% 100%'; v.style.maskSize = '100% 100%';
+          v._nw = box.nw; v._se = box.se; place(v);
+          v.hidden = false;
+          // Swap on the next frame, once the new layer has painted with its mask.
+          requestAnimationFrame(() => {
+            if (job !== maskJob) return;
+            veils[front].hidden = true; sheet.hidden = true;
+            if (maskUrl[front]) URL.revokeObjectURL(maskUrl[front]);
+            maskUrl[back] = url; front = back;
+          });
+        });
+      });
+    }
     if (perf.length < 5 && me){ perf.push(performance.now() - t0); if (perf.length === 5){ const sorted = perf.slice().sort((a, z) => a - z); onPerf({style, medianMs:Math.round(sorted[2]), maxMs:Math.round(sorted[4]), cells:cells.size}); } }
   }
-  let raf = 0;
-  const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
-  map.on('moveend resize viewreset', redraw);
-  map.on('zoomstart', () => { veil.style.visibility = 'hidden'; });
-  map.on('zoomend', () => { veil.style.visibility = ''; redraw(); });
+  let raf = 0, zooming = false;
+  const redraw = () => { if (!zooming && !raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+  const shown = () => [sheet].concat(veils).filter(e => !e.hidden);
+  map.on('moveend resize', redraw);
+  map.on('zoom viewreset', () => shown().forEach(place));          // pinch zoom: stretch with the map each frame
+  map.on('zoomanim', e => {                                       // animated zoom: ride the same transform as the map
+    zooming = true;
+    for (const v of shown()) if (v._nw) L.DomUtil.setTransform(v, map._latLngToNewLayerPoint(v._nw, e.zoom, e.center), map.getZoomScale(e.zoom));
+  });
+  map.on('zoomstart', () => { zooming = true; });
+  map.on('zoomend', () => { zooming = false; shown().forEach(place); redraw(); });
   draw();
 
   return {
@@ -79,7 +128,8 @@ function create(map, opts){
     setMe(p){ me = p ? {lat:p.lat, lng:p.lng} : null; redraw(); },
     setStyle(s){ style = s; redraw(); },
     clear(){ cells = new Set(); save([]); redraw(); },
-    get size(){ return cells.size; }
+    get size(){ return cells.size; },
+    get style(){ return style; }
   };
 }
 window.PecanFog = {create};

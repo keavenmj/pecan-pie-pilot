@@ -57,7 +57,8 @@ const RANK_WEIGHTS = [45, 28, 17, 8, 2];                        // Common to Myt
 const NODE_NAMES = ['Tidewater Post', 'Gull Rock', 'Lantern Steps', 'Rope Yard', 'Salt Gate', 'Breakwater Bench', 'Kelp Corner',
   'Pilot House', 'Harbor Clock', 'Net Loft', 'Bell Tower', 'Ferry Slip', 'Driftwood Arch', 'Signal Hill', 'Shell Walk', 'Mooring Post',
   'Old Customs', 'Fog Bell', 'Cannery Row', 'Pier Gate'];
-const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:2, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm', fog:'blur'}, store.get('pilot', {}));
+const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:2, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm', fog:'plain'}, store.get('pilot', {}));
+if (!P.fogV){ P.fog = 'plain'; P.fogV = 2; store.set('pilot', P); }   // 3.9: the blurred fog flickered on iPhone; everyone starts on the canvas veil
 const saveP = () => store.set('pilot', P);
 // Card spots now recharge in 2 hours (was 4). Settings saved before the change still say 4, so move them once.
 if ((P.coolV || 0) < 2){ if (P.cool === 4) P.cool = 2; P.coolV = 2; saveP(); }
@@ -73,7 +74,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '3.8';
+const APP_V = '3.9';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;

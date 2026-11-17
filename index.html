@@ -17,8 +17,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Alegreya+SC:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
-<link rel="stylesheet" href="css/engine.css?v=3.8">
-<link rel="stylesheet" href="css/pilot.css?v=3.8">
+<link rel="stylesheet" href="css/engine.css?v=3.9">
+<link rel="stylesheet" href="css/pilot.css?v=3.9">
 </head>
 <body>
 <div class="app" id="app">
@@ -143,7 +143,7 @@
           </div>
           <div class="row"><label for="dMock">Mock location</label><select id="dMock"><option value="off">Off (real GPS)</option><option value="on">On: tap the map to walk</option></select></div>
           <div class="row"><label for="dWalk">Mock walk speed</label><select id="dWalk"><option value="1.4">1.4 m/s (walking)</option><option value="6">6 m/s</option><option value="40">40 m/s</option><option value="0">Teleport</option></select></div>
-          <div class="row"><label for="dFog">Fog of war</label><select id="dFog"><option value="blur">Blurred (default)</option><option value="plain">Plain dark veil</option><option value="off">Off</option></select></div>
+          <div class="row"><label for="dFog">Fog of war</label><select id="dFog"><option value="plain">Dark veil (default)</option><option value="blur">Blurred (experimental)</option><option value="off">Off</option></select></div>
           <div class="row"><label for="dSource">Node placement</label><select id="dSource"><option value="osm">Public places, then walkable spots</option><option value="walk">Walkable spots only</option><option value="random">Random spots</option></select></div>
           <div class="row"><label for="dVis">Visibility radius</label><input type="range" id="dVis" min="200" max="800" step="50"><output id="oVis"></output></div>
           <div class="row"><label for="dReach">Interaction radius</label><input type="range" id="dReach" min="30" max="150" step="5"><output id="oReach"></output></div>
@@ -256,12 +256,12 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/maplibre/maplibre-gl.js"></script>
 <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
-<script src="js/mapstyle.js?v=3.8"></script>
-<script src="js/engine.js?v=3.8"></script>
+<script src="js/mapstyle.js?v=3.9"></script>
+<script src="js/engine.js?v=3.9"></script>
 <!-- config.js is tiny and edited by hand, so always fetch it fresh rather than from cache -->
 <script>document.write('<script src="js/config.js?t=' + Date.now() + '"><\/script>');</script>
-<script src="js/world.js?v=3.8"></script>
-<script src="js/fog.js?v=3.8"></script>
-<script src="js/pilot.js?v=3.8"></script>
+<script src="js/world.js?v=3.9"></script>
+<script src="js/fog.js?v=3.9"></script>
+<script src="js/pilot.js?v=3.9"></script>
 </body>
 </html>
