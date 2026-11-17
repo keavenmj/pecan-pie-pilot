@@ -23,6 +23,10 @@ input[type=text], input[type=url] { grid-column: 2 / span 2; min-height: 36px; b
 
 /* ---------- Map ---------- */
 #map { position: absolute; inset: 0; background: #120f22; }
+/* Fog of war: unexplored ground blurred, washed out and tinted; js/fog.js cuts the walked areas out with a mask. */
+.fog-veil { position: absolute; left: 0; top: 0; pointer-events: none; background: rgba(18,10,40,.55);
+  -webkit-backdrop-filter: blur(3px) saturate(.25) brightness(.55); backdrop-filter: blur(3px) saturate(.25) brightness(.55); }
+.fog-veil.plain { background: rgba(7,5,16,.8); -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* The map is always dark. The raster fallback is darkened to match the vector style. */
 #map.raster-dark .leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.8) contrast(.9) saturate(.5); }
 .leaflet-container { font-family: var(--font-display); }

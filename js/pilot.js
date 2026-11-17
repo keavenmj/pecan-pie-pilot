@@ -57,7 +57,7 @@ const RANK_WEIGHTS = [45, 28, 17, 8, 2];                        // Common to Myt
 const NODE_NAMES = ['Tidewater Post', 'Gull Rock', 'Lantern Steps', 'Rope Yard', 'Salt Gate', 'Breakwater Bench', 'Kelp Corner',
   'Pilot House', 'Harbor Clock', 'Net Loft', 'Bell Tower', 'Ferry Slip', 'Driftwood Arch', 'Signal Hill', 'Shell Walk', 'Mooring Post',
   'Old Customs', 'Fog Bell', 'Cannery Row', 'Pier Gate'];
-const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:2, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm'}, store.get('pilot', {}));
+const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:2, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm', fog:'blur'}, store.get('pilot', {}));
 const saveP = () => store.set('pilot', P);
 // Card spots now recharge in 2 hours (was 4). Settings saved before the change still say 4, so move them once.
 if ((P.coolV || 0) < 2){ if (P.cool === 4) P.cool = 2; P.coolV = 2; saveP(); }
@@ -73,7 +73,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '3.7';
+const APP_V = '3.8';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -261,6 +261,7 @@ function trackMove(lat, lng, acc){
   if (acc <= 20 && d >= 20) heading = Math.atan2((lng - a.lng)*Math.cos(rad(lat)), lat - a.lat);   // a clear step, not drift
   basic.lastMoveT = now;
   addDistance(d, 'walk');
+  fog.walk(a, {lat, lng});                                 // the same walked steps clear the fog
 }
 setInterval(() => {
   if (document.visibilityState === 'visible' && Date.now() - basic.lastMoveT > 60000) addDistance(10*IDLE_RATE, 'idle');
@@ -461,11 +462,13 @@ let me = null, meAcc = Infinity, hadFix = false, follow = true;
 const meMarker = L.marker([0, 0], {icon:L.divIcon({className:'', html:'<div class="me"></div>', iconSize:[18, 18], iconAnchor:[9, 9]}), interactive:false, keyboard:false, zIndexOffset:1000});
 const accCircle = L.circle([0, 0], {radius:1, color:'#2F7DE1', weight:1, fillOpacity:.1, interactive:false});
 const reachCircle = L.circle([0, 0], {radius:P.reach, color:'#C9971C', weight:1.5, dashArray:'4 6', fill:false, interactive:false});
+// Fog of war (js/fog.js): history stays on this phone as ~10 m cells and is never logged; only redraw timing is.
+const fog = window.PecanFog.create(map, {style:P.fog, load:() => store.get('fog', []), save:l => store.set('fog', l), onPerf:d => event('fog_perf', d)});
 map.on('dragstart', () => { follow = false; });
 $('recenter').addEventListener('click', () => { follow = true; if (me) map.setView([me.lat, me.lng], Math.max(map.getZoom(), 16)); });
 
 function setPosition(lat, lng, acc){
-  me = {lat, lng}; meAcc = acc;
+  me = {lat, lng}; meAcc = acc; fog.setMe(me);
   const ll = [lat, lng];
   meMarker.setLatLng(ll); accCircle.setLatLng(ll).setRadius(Math.min(acc, 2000)); reachCircle.setLatLng(ll);
   if (!hadFix){
@@ -1235,6 +1238,8 @@ $('dMock').addEventListener('change', () => {
 $('dWalk').value = String(P.walk);
 $('dWalk').addEventListener('change', () => { P.walk = $('dWalk').value; saveP(); });
 $('dReseed').addEventListener('click', () => { if (me){ reseedNodes(); $('dNote').textContent = 'Rebuilding nodes around you.'; } else $('dNote').textContent = 'No location yet.'; });
+$('dFog').value = P.fog;
+$('dFog').addEventListener('change', () => { P.fog = $('dFog').value; saveP(); fog.setStyle(P.fog); event('fog_style', {style:P.fog}); });
 $('dSource').value = P.nodeSource;
 $('dSource').addEventListener('change', () => { P.nodeSource = $('dSource').value; saveP(); $('dNote').textContent = 'Tap Reseed nodes around me to apply.'; });
 $('dReady').addEventListener('click', () => { if (nodes){ nodes.forEach(n => { n.coolUntil = 0; delete n.ball; }); store.set('nodes', nodes); refreshNodes(); $('dNote').textContent = 'All nodes ready.'; } });
@@ -1256,7 +1261,8 @@ $('dWipe').addEventListener('click', () => {
   if (!wipeArmed){ wipeArmed = true; $('dWipe').textContent = 'Tap again to erase'; setTimeout(() => { wipeArmed = false; $('dWipe').textContent = 'Erase collection'; }, 3000); return; }
   collection = []; store.set('collection', collection); wipeArmed = false; $('dWipe').textContent = 'Erase collection';
   board = newBoard(); store.set('bingo', board); refreshNodes();       // the board is built from the collection, so it goes too
-  $('dNote').textContent = 'Collection erased, with a new bingo board.'; updateChips(); event('collection_erased');
+  fog.clear();                                                          // where you've walked is erased with the collection
+  $('dNote').textContent = 'Collection erased, with a new bingo board and fresh fog.'; updateChips(); event('collection_erased');
 });
 $('newCard').addEventListener('click', () => openScratch(drawCard(), {source:'debug', label:'Test card', provenance:'Test card', ball:rollBall()}));
 $('dDice').addEventListener('click', () => { for (let r = 1; r <= 5; r++) grantDie(r, 'debug'); $('dNote').textContent = 'Added one die of each rank.'; });
@@ -1279,6 +1285,7 @@ $('dReset').addEventListener('click', () => {
   basic = Object.assign(basic, {pts:0, ready:false, today:0, walkM:0, idleS:0}); saveBasic();
   pending = {}; store.set('pending', pending);
   daily.last = 0; store.set('daily', daily);
+  fog.clear();
   if (nodes){ nodes.forEach(n => { n.coolUntil = 0; delete n.ball; }); store.set('nodes', nodes); }
   event('tester_reset');
   updateChips(); updateDiceChip(); refreshNodes();
@@ -1351,5 +1358,5 @@ updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
 setTimeout(maybeShowInstallTip, 4000);
-window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, ensureSectors, reseedNodes, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get heading(){ return heading; }, get sectorsDone(){ return sectorsDone; }, world:World};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, ensureSectors, reseedNodes, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get heading(){ return heading; }, get sectorsDone(){ return sectorsDone; }, world:World, fog};
 })();
