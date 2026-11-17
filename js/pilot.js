@@ -568,6 +568,8 @@ $('permSkip').addEventListener('click', () => showView('vCollection'));
    spots for a sector from the same pinned map tiles and seeded randomness. This file only decides which sectors to
    load, merges them into the player's list, and keeps per-player state (cooldowns, bingo balls) on the spot by id. */
 const World = window.PecanWorld;
+// Start from the snapshot saved after any earlier switch (a retired pin), so a relaunch doesn't rebuild everything.
+World.init({snapshot:store.get('tileSnap', null), onSwitch:s => { store.set('tileSnap', s); event('tile_snapshot', {snapshot:s}); }});
 const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
 let sectorsDone = store.get('sectorsDone', {});            // sector id -> snapshot it was built from (only full builds)
 let building = false, lastBuildFail = 0, noteTimer = null;
@@ -585,7 +587,9 @@ async function ensureSectors(){
   if (!want.length) return;
   if (Date.now() - lastBuildFail < 20000) return;          // offline or failing: try again in a little while
   building = true;
-  try{ await buildNear(want); } finally { building = false; }
+  try{ await buildNear(want); }
+  catch(err){ mapNote(null); event('sector_error', {error:String(err && err.message || err).slice(0, 80)}); lastBuildFail = Date.now(); }
+  finally { building = false; }
 }
 async function buildNear(want){
   const quiet = cardsNear();                               // background load with spots already around: no notes

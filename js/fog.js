@@ -25,7 +25,9 @@ const VEIL = 'rgba(9,6,22,.84)';
 const keyOf = (lat, lng) => Math.round(lat*1e4) + ',' + Math.round(lng*1e4);
 const cellLL = k => { const [a, b] = k.split(','); return [a/1e4, b/1e4]; };
 // Cells are kept parsed (key -> [lat, lng]) so a redraw, which runs on every GPS fix, never re-parses strings.
-const toMap = keys => new Map(keys.map(k => [k, cellLL(k)]));
+// Anything unexpected in storage is ignored rather than allowed to stop the app from starting.
+const CELL_KEY = /^-?\d+,-?\d+$/;
+const toMap = keys => new Map((Array.isArray(keys) ? keys : []).filter(k => typeof k === 'string' && CELL_KEY.test(k)).map(k => [k, cellLL(k)]));
 
 function create(map, opts){
   const load = opts.load || (() => []), save = opts.save || (() => {}), onPerf = opts.onPerf || (() => {});
