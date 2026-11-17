@@ -24,10 +24,12 @@ const STEP = 8, TRAIL_R = 40, LANTERN_R = 100, MAX_CELLS = 20000, RES = 0.5, PAD
 const VEIL = 'rgba(9,6,22,.84)';
 const keyOf = (lat, lng) => Math.round(lat*1e4) + ',' + Math.round(lng*1e4);
 const cellLL = k => { const [a, b] = k.split(','); return [a/1e4, b/1e4]; };
+// Cells are kept parsed (key -> [lat, lng]) so a redraw, which runs on every GPS fix, never re-parses strings.
+const toMap = keys => new Map(keys.map(k => [k, cellLL(k)]));
 
 function create(map, opts){
   const load = opts.load || (() => []), save = opts.save || (() => {}), onPerf = opts.onPerf || (() => {});
-  let style = opts.style || 'plain', me = null, cells = new Set(load()), saveTimer = null;
+  let style = opts.style || 'plain', me = null, cells = toMap(load()), saveTimer = null;
   const pane = map.createPane('fog'); pane.style.zIndex = 390; pane.style.pointerEvents = 'none';
   const el = (tag, cls) => { const e = document.createElement(tag); e.className = cls + ' leaflet-zoom-animated'; e.hidden = true; pane.appendChild(e); return e; };
   const sheet = el('canvas', 'fog-sheet');                         // plain style: the visible canvas itself
@@ -39,8 +41,8 @@ function create(map, opts){
   function persist(){
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      let list = [...cells];
-      if (list.length > MAX_CELLS){ list = list.slice(-MAX_CELLS); cells = new Set(list); }   // oldest first out
+      let list = [...cells.keys()];
+      if (list.length > MAX_CELLS){ list = list.slice(-MAX_CELLS); cells = toMap(list); }   // oldest first out
       save(list);
     }, 1500);
   }
@@ -68,12 +70,13 @@ function create(map, opts){
     };
     g.globalCompositeOperation = 'destination-out';
     const b = map.getBounds().pad(PAD + .2), s = b.getSouth(), n = b.getNorth(), we = b.getWest(), e = b.getEast();
-    for (const k of cells){ const [lat, lng] = cellLL(k); if (lat >= s && lat <= n && lng >= we && lng <= e) hole(lat, lng, TRAIL_R); }
+    for (const [lat, lng] of cells.values()) if (lat >= s && lat <= n && lng >= we && lng <= e) hole(lat, lng, TRAIL_R);
     if (me) hole(me.lat, me.lng, LANTERN_R);
     return {nw:map.containerPointToLatLng([-px, -py]), se:map.containerPointToLatLng([size.x + px, size.y + py])};
   }
   function draw(){
     const t0 = performance.now();
+    if (style !== 'blur') maskJob++;                            // a blur mask still loading must not appear after a switch
     if (style === 'off'){ sheet.hidden = true; veils.forEach(v => { v.hidden = true; }); return; }
     if (style === 'plain'){
       veils.forEach(v => { v.hidden = true; });
@@ -121,13 +124,13 @@ function create(map, opts){
     // A walked step from a to b ({lat, lng}): clear the cells along it.
     walk(a, b){
       const d = map.distance([a.lat, a.lng], [b.lat, b.lng]), n = Math.max(1, Math.ceil(d/STEP)), before = cells.size;
-      for (let i = 0; i <= n; i++){ const k = keyOf(a.lat + (b.lat - a.lat)*i/n, a.lng + (b.lng - a.lng)*i/n); cells.delete(k); cells.add(k); }
+      for (let i = 0; i <= n; i++){ const k = keyOf(a.lat + (b.lat - a.lat)*i/n, a.lng + (b.lng - a.lng)*i/n); cells.delete(k); cells.set(k, cellLL(k)); }
       if (cells.size !== before) persist();
       redraw();
     },
     setMe(p){ me = p ? {lat:p.lat, lng:p.lng} : null; redraw(); },
     setStyle(s){ style = s; redraw(); },
-    clear(){ cells = new Set(); save([]); redraw(); },
+    clear(){ cells = new Map(); save([]); redraw(); },
     get size(){ return cells.size; },
     get style(){ return style; }
   };

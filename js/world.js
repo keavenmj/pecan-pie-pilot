@@ -24,6 +24,7 @@ const Z = 14, N = 2 ** Z, SECTOR = 0.01;
 const CARD_MAX = 12, WALK_UNTIL = 8, CARD_MIN = 6, DICE = 2, SPACING = 45, MARGIN = 60, CELL = 50;
 const WALK_CLEAR = {road:15, rail:15, waterway:8, water:true};
 const POI_CLEAR = {road:6, rail:10, waterway:0, water:true};
+const POI_DRY = {road:6, rail:10, waterway:0, water:false};
 
 /* ---------- Seeded randomness (same functions as Apple Pie's shared/rng.js) ---------- */
 function hash32(str){
@@ -138,8 +139,13 @@ function decodeTile(buf, want){
 }
 
 /* ---------- Tile fetching ---------- */
-let snapUsed = SNAPSHOT, snapNote = 'pinned';
-const tileCache = new Map();
+let snapUsed = SNAPSHOT, snapNote = 'pinned', latestP = null;
+const tileCache = new Map(), TILE_TIMEOUT = 15000;
+// A stalled request must fail, not hang: the caller holds a lock while it builds.
+async function fetchWithTimeout(url){
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), TILE_TIMEOUT);
+  try{ return await fetch(url, {signal:ctl.signal}); } finally { clearTimeout(t); }
+}
 async function bytes(res){
   let buf = new Uint8Array(await res.arrayBuffer());
   if (buf[0] === 0x1f && buf[1] === 0x8b){
@@ -149,20 +155,30 @@ async function bytes(res){
   return buf;
 }
 async function latestSnapshot(){
-  const tj = await (await fetch(TILEJSON)).json(), m = /planet\/([^/]+)\/\{z\}/.exec(tj.tiles[0]);
+  const tj = await (await fetchWithTimeout(TILEJSON)).json(), m = /planet\/([^/]+)\/\{z\}/.exec(tj.tiles[0]);
   if (!m) throw new Error('no snapshot in TileJSON');
   return m[1];
 }
-function fetchTile(x, y){
-  const key = x + '/' + y;
+const LAYERS = ['poi', 'transportation', 'water', 'waterway', 'landuse', 'aeroway'];
+const gone = r => r.status === 404 || r.status === 410;
+function fetchTile(snap, x, y){
+  const key = snap + '/' + x + '/' + y;
   if (!tileCache.has(key)){
     const p = (async () => {
-      let res = await fetch(tileUrl(snapUsed, x, y));
-      // If the pinned snapshot is ever retired, fall back to the newest one. Every phone does the same, so the world
-      // stays shared, but spots move once; the log records it.
-      if ((res.status === 404 || res.status === 410) && snapNote === 'pinned'){ snapUsed = await latestSnapshot(); snapNote = 'latest'; res = await fetch(tileUrl(snapUsed, x, y)); }
-      if (!res.ok) throw new Error('tile ' + res.status);
-      return decodeTile(await bytes(res), ['poi', 'transportation', 'water', 'waterway']);
+      const res = await fetchWithTimeout(tileUrl(snap, x, y));
+      if (res.ok) return decodeTile(await bytes(res), LAYERS);
+      if (!gone(res)) throw new Error('tile ' + res.status);
+      // A missing tile is not proof the pinned snapshot was retired. Only if the newest snapshot differs AND has this
+      // tile do we switch (every phone reaches the same conclusion, so the world stays shared; spots move once and the
+      // log records it). Missing from both means there is simply no data there.
+      if (snap !== SNAPSHOT) return {};
+      const latest = await (latestP = latestP || latestSnapshot().catch(err => { latestP = null; throw err; }));
+      if (latest === SNAPSHOT) return {};
+      const r2 = await fetchWithTimeout(tileUrl(latest, x, y));
+      if (gone(r2)) return {};
+      if (!r2.ok) throw new Error('tile ' + r2.status);
+      snapUsed = latest; snapNote = 'latest';
+      return decodeTile(await bytes(r2), LAYERS);
     })();
     p.catch(() => tileCache.delete(key));
     tileCache.set(key, p);
@@ -173,15 +189,23 @@ function fetchTile(x, y){
 /* ---------- Placement rules ---------- */
 // The place types that become card spots, by OpenMapTiles poi subclass (class as a fallback), with a base score.
 // Schools, worship, clinics, playgrounds, memorials and private places are simply not on the list.
-const KIND = {artwork:['Public art', 9], viewpoint:['Viewpoint', 9], lighthouse:['Lighthouse', 10], museum:['Museum', 7],
+const KIND = {artwork:['Public art', 9], viewpoint:['Viewpoint', 9], museum:['Museum', 7],
   attraction:['Landmark', 6], monument:['Historic site', 8], castle:['Historic site', 8], ruins:['Historic site', 8],
   park:['Park', 7], garden:['Garden', 6], library:['Library', 7], fountain:['Fountain', 8], clock:['Public clock', 6],
   arts_centre:['Arts center', 6], theatre:['Theater', 6], cinema:['Cinema', 5], community_centre:['Community center', 5],
   townhall:['Town hall', 6], marketplace:['Market', 6], cafe:['Cafe', 5], ice_cream:['Ice cream shop', 5], post_office:['Post office', 4]};
 function kindOf(p){
   if (p.class === 'library' && p.subclass !== 'library') return null;             // bookshops share the library class
+  // Tiles carry no access tags for places, so the name is the best signal left: unnamed gardens are usually private.
+  if (p.subclass === 'garden' && !(p.name || '').trim()) return null;
   return KIND[p.subclass] || null;
 }
+// Ground no spot may sit on, whatever its kind: restricted, secured or sensitive land. Lighthouses and other places on
+// military bases, airfields and school grounds fall out here.
+const NO_GO_LANDUSE = new Set(['military', 'school', 'kindergarten', 'playground', 'hospital', 'cemetery', 'railway', 'quarry']);
+const NO_GO_AEROWAY = new Set(['aerodrome', 'runway', 'taxiway', 'apron', 'helipad']);
+const WATERSIDE = new Set(['Viewpoint']);                      // allowed over water if a public path or pier is in reach
+const REACH = 60;
 const WALK_KIND = {footway:['Footpath', 1], path:['Trail', 1], pedestrian:['Plaza', 2], cycleway:['Bike path', 0], bridleway:['Bridleway', 0]};
 const ROADS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service', 'busway', 'raceway']);
 const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
@@ -190,6 +214,10 @@ function segDist(p, a, b){
   const dx = b.x - a.x, dy = b.y - a.y, L = dx*dx + dy*dy;
   let k = L ? ((p.x - a.x)*dx + (p.y - a.y)*dy)/L : 0; k = k < 0 ? 0 : k > 1 ? 1 : k;
   return Math.hypot(p.x - a.x - k*dx, p.y - a.y - k*dy);
+}
+function inZones(p, zones){
+  for (const rings of zones){ let c = false; for (const r of rings) if (inRing(p, r)) c = !c; if (c) return true; }
+  return false;
 }
 function inRing(p, ring){
   let c = false;
@@ -211,13 +239,16 @@ async function buildSector(sid, opts = {}){
   const toXY = (lat, lng) => ({x:q1((lng - w)*kx), y:q1((lat - s)*ky)});
   const toLL = p => ({lat:q6(s + p.y/ky), lng:q6(w + p.x/kx)});
   const inside = p => p.x >= 0 && p.x < W && p.y >= 0 && p.y < H;
+  // Which sector owns a point is decided by integer math on rounded coordinates, so two neighboring sectors can never
+  // both claim (or both miss) a place on their shared edge.
+  const owns = ll => Math.floor(Math.round(ll.lng*1e6)/10000) === xy[0] && Math.floor(Math.round(ll.lat*1e6)/10000) === xy[1];
   const names = shuffled(names0, rng(sid + ':names'));
   const t0 = Date.now(), stats = {ok:false, tiles:0, fetchMs:0, places:0, walk:0, random:0, dice:0, snapshot:'none'};
 
   // Map data: the tiles covering the sector plus a margin, so hazards just over the edge still count.
-  const segs = new Map(), waters = [], walks = [], pois = new Map();
+  const segs = new Map(), waters = [], walks = [], pois = new Map(), noGo = [];
   let ok = false;
-  if (mode !== 'random'){
+  if (mode !== 'random' && !opts.offline){                   // offline: the network just failed; go straight to fallback
     try{
       const mLat = MARGIN/ky, mLng = MARGIN/kx;
       const lon2tx = lng => Math.floor((lng + 180)/360*N);
@@ -225,8 +256,11 @@ async function buildSector(sid, opts = {}){
       const jobs = [];
       for (let tx = lon2tx(w - mLng); tx <= lon2tx(e + mLng); tx++)
         for (let ty = lat2ty(n + mLat); ty <= lat2ty(s - mLat); ty++) jobs.push([tx, ty]);
-      const tiles = await Promise.all(jobs.map(([tx, ty]) => fetchTile(tx, ty).then(L => ({tx, ty, L}))));
-      stats.tiles = tiles.length; stats.snapshot = snapNote;
+      const snap0 = snapUsed;
+      const tiles = await Promise.all(jobs.map(([tx, ty]) => fetchTile(snap0, tx, ty).then(L => ({tx, ty, L}))));
+      // If the snapshot switched mid-build, rebuild entirely from the new one rather than mixing the two.
+      if (snapUsed !== snap0) return buildSector(sid, opts);
+      stats.tiles = tiles.length; stats.snapshot = snapNote; stats.snap = snap0;
       // Test extents, not vertices: a long straight road or a coastline can cross the sector with every vertex far away.
       const lo = -MARGIN, hiX = W + MARGIN, hiY = H + MARGIN;
       const boxNear = pts => { let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
@@ -246,14 +280,15 @@ async function buildSector(sid, opts = {}){
         if (T) for (const f of T.features){
           const p = f.props;
           if (p.brunnel === 'tunnel' || f.type !== 2) continue;
-          const isWalk = (p.class === 'path' && WALK_KIND[p.subclass]) || p.class === 'track';
+          const open = p.access !== 'no' && p.foot !== 'no';    // private or no-entry ways never host a spot
+          const isWalk = open && ((p.class === 'path' && WALK_KIND[p.subclass]) || p.class === 'track' || p.class === 'pier');
           const hz = ROADS.has(p.class) ? 'road' : (p.class === 'rail' || p.class === 'transit') ? 'rail' : null;
           if (!isWalk && !hz) continue;
           for (const part of f.parts){
             const pts = part.map(([px, py]) => pt(T.extent, px, py));
             if (!boxNear(pts)) continue;
             if (hz) for (let i = 1; i < pts.length; i++) addSeg(pts[i - 1], pts[i], hz);
-            else walks.push({pts, kind:p.class === 'track' ? ['Track', -1] : WALK_KIND[p.subclass]});
+            else walks.push({pts, kind:p.class === 'track' ? ['Track', -1] : p.class === 'pier' ? ['Pier', 2] : WALK_KIND[p.subclass]});
           }
         }
         const WW = L.waterway;
@@ -268,6 +303,12 @@ async function buildSector(sid, opts = {}){
           // Keep it if any ring's extent reaches the sector area; rings of one feature are tested together (holes are islands).
           if (rings.some(boxNear)) waters.push(rings);
         }
+        const LU = L.landuse, AE = L.aeroway;
+        for (const [Ly, set] of [[LU, NO_GO_LANDUSE], [AE, NO_GO_AEROWAY]]) if (Ly) for (const f of Ly.features){
+          if (f.type !== 3 || !set.has(f.props.class)) continue;
+          const rings = f.parts.map(part => part.map(([px, py]) => pt(Ly.extent, px, py)));
+          if (rings.some(boxNear)) noGo.push(rings);
+        }
         const PO = L.poi;
         if (PO) for (const f of PO.features){
           if (f.type !== 1 || f.id == null || pois.has(f.id)) continue;
@@ -275,7 +316,7 @@ async function buildSector(sid, opts = {}){
           const [px, py] = f.parts[0] && f.parts[0][0] || [];
           if (px == null) continue;
           const p = pt(PO.extent, px, py);
-          if (inside(p)) pois.set(f.id, {key:'p' + f.id, p, kind:k[0], base:k[1], name:(f.props.name || '').trim()});
+          if (owns(toLL(p))) pois.set(f.id, {key:'p' + f.id, p, kind:k[0], base:k[1], name:(f.props.name || '').trim()});
         }
       }
       ok = true;
@@ -290,9 +331,12 @@ async function buildSector(sid, opts = {}){
       const l = segs.get(ix + ',' + iy); if (!l) continue;
       for (const sg of l){ const m = lim[sg.t]; if (m && segDist(p, sg.a, sg.b) < m) return false; }
     }
-    if (lim.water) for (const rings of waters){ let c = false; for (const r of rings) if (inRing(p, r)) c = !c; if (c) return false; }
+    if (inZones(p, noGo)) return false;
+    if (lim.water && inZones(p, waters)) return false;
     return true;
   };
+  // Over water is fine for a viewpoint on a pier or breakwater, but only when a public path or pier is within reach.
+  const reachable = p => walks.some(wk => wk.pts.some((q, i) => i > 0 && segDist(p, wk.pts[i - 1], q) <= REACH));
   const nearestRoad = p => {
     let best = 60; const gx = Math.floor(p.x/CELL), gy = Math.floor(p.y/CELL);
     for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++){
@@ -313,7 +357,7 @@ async function buildSector(sid, opts = {}){
   if (ok && mode === 'osm'){
     const seen = [], cands = [];
     for (const c of pois.values()){
-      if (!clear(c.p, POI_CLEAR)) continue;                   // e.g. art in a road median
+      if (!clear(c.p, POI_CLEAR) && !(WATERSIDE.has(c.kind) && clear(c.p, POI_DRY) && reachable(c.p))) continue;   // e.g. art in a road median
       c.score = c.base + (c.name ? 3 : 0) + unit(sid + ':' + c.key)*1.5;
       cands.push(c);
     }
@@ -340,7 +384,7 @@ async function buildSector(sid, opts = {}){
         let d = carry;
         for (; d < L; d += 30){
           const p = {x:q1(a.x + (b.x - a.x)*d/L), y:q1(a.y + (b.y - a.y)*d/L)};
-          if (!inside(p) || !clear(p, WALK_CLEAR)) continue;
+          if (!inside(p) || !owns(toLL(p)) || !clear(p, WALK_CLEAR)) continue;
           const key = 'w' + Math.round(p.x) + '_' + Math.round(p.y);
           if (keys.has(key)) continue;
           keys.add(key);
@@ -372,7 +416,7 @@ async function buildSector(sid, opts = {}){
     for (let i = 0; i < count; i++){
       for (let tries = 0; tries < 80; tries++){
         const p = {x:q1(r()*W), y:q1(r()*H)};
-        if (!spaced(p) || !clear(p, WALK_CLEAR)) continue;
+        if (!owns(toLL(p)) || !spaced(p) || !clear(p, WALK_CLEAR)) continue;
         const name = nextName();
         push({key:seed + i, p}, Object.assign({src:'random', name, kind:'Scratch spot', prov:`First pulled at ${name}`}, extra || {}));
         made++; break;
@@ -390,7 +434,7 @@ async function buildSector(sid, opts = {}){
   if (dz < DICE) dz += fill(DICE - dz, 'dz', {type:'die', kind:'Dice cache'});
   stats.dice = dz;
   out.forEach(o => { if (o.type === 'die') o.prov = `First pulled at ${o.name}`; });
-  return {ok:stats.ok && (ok || mode === 'random'), nodes:out, stats};
+  return {ok:stats.ok, snap:stats.snap || snapUsed, nodes:out, stats};
 }
 
 window.PecanWorld = {SNAPSHOT, SECTOR, hash32, rng, sectorOf, sectorsNear, parseSector, buildSector, decodeTile, get snapshot(){ return snapUsed; }};

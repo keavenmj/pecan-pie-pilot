@@ -227,7 +227,8 @@ function pickupDie(n){
   let r = E.rng()*100, rank = 1;
   for (let i = 0; i < DIE_ODDS.length; i++){ if (r < DIE_ODDS[i]){ rank = i + 1; break; } r -= DIE_ODDS[i]; }
   grantDie(rank, 'cache');
-  n.coolUntil = Date.now() + P.dieCool*3600e3; store.set('nodes', nodes);
+  const live = (nodes || []).find(x => x.id === n.id) || n;
+  live.coolUntil = Date.now() + P.dieCool*3600e3; store.set('nodes', nodes);
   event('die_pickup', {node:n.id, rank, src:n.src});
   closeSheet(); refreshNodes();
   toast([`You found ${article(E.RANKS[rank - 1])} ${E.RANKS[rank - 1]} die (${E.dieName(rank)}). Add it before your next scratch.`]);
@@ -249,17 +250,15 @@ function addDistance(pts, mode){
 }
 // Direction of travel, used to load the next batch of spots ahead of the player. It comes from the same movement
 // filter as Distance, so a gap, a jump or a vehicle-speed move clears it instead of leaving a stale direction.
-let heading = null;
 function trackMove(lat, lng, acc){
   if (acc > 35) return;                                   // too rough to tell a step from drift
   const now = Date.now(), a = basic.anchor;
-  if (!a){ basic.anchor = {lat, lng, t:now}; heading = null; return; }
+  if (!a){ basic.anchor = {lat, lng, t:now}; return; }
   const d = dist(a, {lat, lng}), dt = Math.max(1, (now - a.t)/1000);
-  if (dt > 120){ basic.anchor = {lat, lng, t:now}; heading = null; return; }   // a gap (app closed, backgrounded, or a long stop): restart here, credit nothing
+  if (dt > 120){ basic.anchor = {lat, lng, t:now}; return; }   // a gap (app closed, backgrounded, or a long stop): restart here, credit nothing
   if (d < Math.max(12, acc*.8)) return;                   // jitter: keep the anchor
   basic.anchor = {lat, lng, t:now};
-  if (d/dt > 3){ heading = null; return; }                // faster than a brisk walk: a car, a bus, or a GPS jump
-  if (acc <= 20 && d >= 20) heading = Math.atan2((lng - a.lng)*Math.cos(rad(lat)), lat - a.lat);   // a clear step, not drift
+  if (d/dt > 3) return;                                   // faster than a brisk walk: a car, a bus, or a GPS jump
   basic.lastMoveT = now;
   addDistance(d, 'walk');
   fog.walk(a, {lat, lng});                                 // the same walked steps clear the fog
@@ -411,10 +410,6 @@ function dist(a, b){
   const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
   const h = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
   return 2*R_EARTH*Math.asin(Math.sqrt(h));
-}
-function offset(p, meters, bearing){
-  const dLat = meters*Math.cos(bearing)/R_EARTH, dLng = meters*Math.sin(bearing)/(R_EARTH*Math.cos(rad(p.lat)));
-  return {lat:p.lat + dLat*180/Math.PI, lng:p.lng + dLng*180/Math.PI};
 }
 const fmtDist = m => m < 1000 ? `${Math.round(m/5)*5} m` : `${(m/1000).toFixed(1)} km`;
 function fmtLeft(ms){
@@ -590,15 +585,20 @@ async function ensureSectors(){
   if (!want.length) return;
   if (Date.now() - lastBuildFail < 20000) return;          // offline or failing: try again in a little while
   building = true;
+  try{ await buildNear(want); } finally { building = false; }
+}
+async function buildNear(want){
   const quiet = cardsNear();                               // background load with spots already around: no notes
   if (!quiet) mapNote('Finding places near you…');
   let failed = false, randomOnly = false;
   for (const sid of want){
     let res;
-    try{ res = await World.buildSector(sid, {mode:P.nodeSource, names:NODE_NAMES}); }
+    // Once one sector fails, don't make the player wait out a timeout per sector: the rest get fallback spots now,
+    // and everything not fully built is retried in 20 s.
+    try{ res = await World.buildSector(sid, {mode:P.nodeSource, names:NODE_NAMES, offline:failed}); }
     catch(err){ res = {ok:false, nodes:[], stats:{ok:false, error:String(err && err.message || err).slice(0, 80)}}; }
     mergeSector(sid, res);
-    if (res.ok) sectorsDone[sid] = World.snapshot; else failed = true;
+    if (res.ok) sectorsDone[sid] = res.snap; else failed = true;      // the snapshot it was really built from
     if (res.stats.random) randomOnly = true;
     // No sector id or coordinates in the log: counts and timings only.
     event('sector_built', Object.assign({}, res.stats, {mode:P.nodeSource}));
@@ -606,7 +606,6 @@ async function ensureSectors(){
   if (failed) lastBuildFail = Date.now();
   trimNodes();
   store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('sectorsDone', sectorsDone);
-  building = false;
   if (!quiet) mapNote(failed ? 'Couldn’t reach map data, so nodes are placed at random for now.'
     : randomOnly && P.nodeSource !== 'random' ? 'Few walkable places are mapped here, so some nodes are placed at random.' : null, failed || randomOnly ? 6000 : 0);
   refreshNodes();
@@ -648,6 +647,9 @@ function nodeInfo(n){
 }
 function refreshNodes(){
   if (!nodes) return;
+  const live = new Set(nodes.map(n => n.id));
+  // A spot replaced or dropped by a sector rebuild must not leave its marker behind.
+  for (const [id, m] of markers) if (!live.has(id)){ m.remove(); markers.delete(id); }
   for (const n of nodes){
     const info = nodeInfo(n);
     let m = markers.get(n.id);
@@ -658,7 +660,8 @@ function refreshNodes(){
     const key = info.st + '|' + label + '|' + look.key;
     if (!m){
       m = L.marker([n.lat, n.lng], {keyboard:true, title:n.name});
-      m.on('click', () => openSheet(n));
+      const id = n.id;                                     // resolve the live spot on tap: rebuilds replace spot objects
+      m.on('click', () => { const cur = nodes && nodes.find(x => x.id === id); if (cur) openSheet(cur); });
       m.addTo(map); markers.set(n.id, m);
     }
     if (m._key !== key){
@@ -670,7 +673,10 @@ function refreshNodes(){
     if (info.st === 'inrange' && !wasInRange.has(n.id)){ wasInRange.add(n.id); event('node_in_range', {node:n.id, type:n.type || 'card', d:Math.round(info.d), acc:Math.round(meAcc)}); }
     if (info.st !== 'inrange') wasInRange.delete(n.id);
   }
-  if (sheetNode) updateSheet();
+  if (sheetNode){
+    const cur = nodes.find(x => x.id === sheetNode.id);
+    if (cur){ sheetNode = cur; updateSheet(); } else closeSheet();
+  }
 }
 
 /* Three rings for card spots: far shows the card, the middle ring shows its bingo ball (highlighted when the number
@@ -1232,7 +1238,7 @@ bindPRange('dRingNear', 'ringNear', v => v + ' m', refreshNodes);
 $('dMock').value = P.mock;
 $('dMock').addEventListener('change', () => {
   P.mock = $('dMock').value; saveP(); stopMock();
-  basic.anchor = null; heading = null;                    // a different location source: no carried-over movement or direction
+  basic.anchor = null;                                    // a different location source: no carried-over movement
   if (P.mock === 'on') startMock(); else { hadFix = false; initLocation(); }
   updateGps();
 });
@@ -1359,5 +1365,5 @@ updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
 setTimeout(maybeShowInstallTip, 4000);
-window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, ensureSectors, reseedNodes, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get heading(){ return heading; }, get sectorsDone(){ return sectorsDone; }, world:World, fog};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, ensureSectors, reseedNodes, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get sectorsDone(){ return sectorsDone; }, world:World, fog};
 })();
