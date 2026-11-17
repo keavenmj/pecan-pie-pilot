@@ -139,13 +139,20 @@ function decodeTile(buf, want){
 }
 
 /* ---------- Tile fetching ---------- */
-let snapUsed = SNAPSHOT, snapNote = 'pinned', latestP = null, onSwitch = () => {};
-const tileCache = new Map(), TILE_TIMEOUT = 15000;
+// While the pin is served, every phone uses it. Once it is retired, every phone uses the newest snapshot, rechecked each
+// launch, so phones always agree (spots then shift when OpenFreeMap publishes a new build). The saved value only lets a
+// relaunch start building at once; it records which pin it replaced, so a release with a new pin ignores it.
+let snapUsed = SNAPSHOT, snapNote = 'pinned', retired = false, latestP = null, onSwitch = () => {};
+const tileCache = new Map(), TILE_TIMEOUT = 25000;     // long enough for a slow cellular download, short enough to fall back
 // A stalled request must fail, not hang: the caller holds a lock while it builds. The timer runs until the whole body
 // has arrived, since a download can stall after the headers.
 async function fetchBody(url, read){
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), TILE_TIMEOUT);
-  try{ const res = await fetch(url, {signal:ctl.signal}); return {status:res.status, ok:res.ok, body:res.ok ? await read(res) : null}; }
+  try{
+    const res = await fetch(url, {signal:ctl.signal});
+    if (!res.ok){ if (res.body) res.body.cancel().catch(() => {}); return {status:res.status, ok:false, body:null}; }   // release the connection
+    return {status:res.status, ok:true, body:await read(res)};
+  }
   finally { clearTimeout(t); }
 }
 async function bytes(res){
@@ -163,6 +170,19 @@ async function latestSnapshot(){
   if (!m) throw new Error('no snapshot in TileJSON');
   return m[1];
 }
+const newest = () => latestP = latestP || latestSnapshot().catch(err => { latestP = null; throw err; });
+function useLatest(latest){
+  retired = true;
+  if (snapUsed !== latest){ snapUsed = latest; snapNote = 'latest'; }
+  onSwitch({pin:SNAPSHOT, snap:latest});
+}
+// Once the pin is known to be retired, confirm the newest snapshot before building (once per launch). Offline, keep the
+// saved one: it is what this phone last agreed on.
+let checked = false;
+async function settleSnapshot(){
+  if (!retired || checked) return;
+  try{ useLatest(await newest()); checked = true; } catch {}
+}
 const LAYERS = ['poi', 'transportation', 'water', 'waterway', 'landuse', 'aeroway'];
 const gone = r => r.status === 404 || r.status === 410;
 function fetchTile(snap, x, y){
@@ -170,18 +190,18 @@ function fetchTile(snap, x, y){
   if (!tileCache.has(key)){
     const p = (async () => {
       const res = await fetchBody(tileUrl(snap, x, y), bytes);
-      if (res.ok) return decodeTile(res.body, LAYERS);
+      if (res.ok){ const L = decodeTile(res.body, LAYERS); Object.defineProperty(L, '_bytes', {value:res.body.length}); return L; }
       if (!gone(res)) throw new Error('tile ' + res.status);
       // A missing tile is not proof the snapshot in use was retired. Only if the newest snapshot differs AND has this
       // tile do we switch (every phone reaches the same conclusion, so the world stays shared; spots move once and the
       // log records it). Missing from both means there is simply no data there.
-      if (snap !== snapUsed) return {};
-      const latest = await (latestP = latestP || latestSnapshot().catch(err => { latestP = null; throw err; }));
-      if (latest === snap) return {};
+      if (retired || snap !== SNAPSHOT) return {};           // the newest snapshot just lacks this tile: no data there
+      const latest = await newest();
+      if (latest === SNAPSHOT) return {};
       const r2 = await fetchBody(tileUrl(latest, x, y), bytes);
       if (gone(r2)) return {};
       if (!r2.ok) throw new Error('tile ' + r2.status);
-      if (snapUsed !== latest){ snapUsed = latest; snapNote = 'latest'; onSwitch(latest); }
+      useLatest(latest);
       return decodeTile(r2.body, LAYERS);
     })();
     p.catch(() => tileCache.delete(key));
@@ -222,11 +242,12 @@ function segDist(p, a, b){
   let k = L ? ((p.x - a.x)*dx + (p.y - a.y)*dy)/L : 0; k = k < 0 ? 0 : k > 1 ? 1 : k;
   return Math.hypot(p.x - a.x - k*dx, p.y - a.y - k*dy);
 }
-function zone(rings){
+function bbox(pts){
   let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
-  for (const r of rings) for (const q of r){ if (q.x < a) a = q.x; if (q.y < b) b = q.y; if (q.x > c) c = q.x; if (q.y > d) d = q.y; }
-  return {rings, box:[a, b, c, d]};
+  for (const q of pts){ if (q.x < a) a = q.x; if (q.y < b) b = q.y; if (q.x > c) c = q.x; if (q.y > d) d = q.y; }
+  return [a, b, c, d];
 }
+const union = boxes => boxes.reduce((u, k) => [Math.min(u[0], k[0]), Math.min(u[1], k[1]), Math.max(u[2], k[2]), Math.max(u[3], k[3])]);
 function inZones(p, zones){
   for (const z of zones){
     if (p.x < z.box[0] || p.y < z.box[1] || p.x > z.box[2] || p.y > z.box[3]) continue;
@@ -270,16 +291,19 @@ async function buildSector(sid, opts = {}){
       const jobs = [];
       for (let tx = lon2tx(w - mLng); tx <= lon2tx(e + mLng); tx++)
         for (let ty = lat2ty(n + mLat); ty <= lat2ty(s - mLat); ty++) jobs.push([tx, ty]);
+      await settleSnapshot();
       const snap0 = snapUsed;
       const tiles = await Promise.all(jobs.map(([tx, ty]) => fetchTile(snap0, tx, ty).then(L => ({tx, ty, L}))));
       // If the snapshot switched mid-build, rebuild entirely from the new one rather than mixing the two.
       if (snapUsed !== snap0) return buildSector(sid, opts);
       stats.tiles = tiles.length; stats.snapshot = snapNote; stats.snap = snap0;
+      stats.bytes = tiles.reduce((t, k) => t + (k.L._bytes || 0), 0); stats.empty = tiles.filter(k => !k.L._bytes).length;   // diagnostics: what this build saw
       // Test extents, not vertices: a long straight road or a coastline can cross the sector with every vertex far away.
       const lo = -MARGIN, hiX = W + MARGIN, hiY = H + MARGIN;
-      const boxNear = pts => { let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
-        for (const q of pts){ if (q.x < a) a = q.x; if (q.x > b) b = q.x; if (q.y < c) c = q.y; if (q.y > d) d = q.y; }
-        return b >= lo && a <= hiX && d >= lo && c <= hiY; };
+      const nearBox = k => k[2] >= lo && k[0] <= hiX && k[3] >= lo && k[1] <= hiY;
+      const boxNear = pts => nearBox(bbox(pts));
+      // A polygon is kept when any ring reaches the sector area; its box is the union of its rings' boxes.
+      const zoneNear = rings => { const boxes = rings.map(bbox); return boxes.some(nearBox) ? {rings, box:union(boxes)} : null; };
       const gMin = Math.floor(lo/CELL) - 1, gMaxX = Math.floor(hiX/CELL) + 1, gMaxY = Math.floor(hiY/CELL) + 1;
       const addSeg = (a, b, t) => {
         if (!boxNear([a, b])) return;
@@ -316,25 +340,27 @@ async function buildSector(sid, opts = {}){
           if (f.type !== 3 || f.props.brunnel === 'tunnel') continue;
           const rings = f.parts.map(part => part.map(([px, py]) => pt(WA.extent, px, py)));
           // Keep it if any ring's extent reaches the sector area; rings of one feature are tested together (holes are islands).
-          if (rings.some(boxNear)) waters.push(zone(rings));
+          const z = zoneNear(rings); if (z) waters.push(z);
         }
         const LU = L.landuse, AE = L.aeroway;
         for (const [Ly, set] of [[LU, NO_GO_LANDUSE], [AE, NO_GO_AEROWAY], [LU, INDUSTRIAL]]) if (Ly) for (const f of Ly.features){
           if (f.type !== 3 || !set.has(f.props.class)) continue;
           const rings = f.parts.map(part => part.map(([px, py]) => pt(Ly.extent, px, py)));
-          if (rings.some(boxNear)) (set === INDUSTRIAL ? industrial : noGo).push(zone(rings));
+          const z = zoneNear(rings); if (z) (set === INDUSTRIAL ? industrial : noGo).push(z);
         }
         const PO = L.poi;
         if (PO) for (const f of PO.features){
           if (f.type !== 1 || f.id == null || pois.has(f.id)) continue;
           const k = kindOf(f.props); if (!k) continue;
           const [px, py] = f.parts[0] && f.parts[0][0] || [];
-          if (px == null) continue;
+          if (px == null || px < 0 || py < 0 || px >= PO.extent || py >= PO.extent) continue;   // buffer copy: its own tile reads it
           const g = ll(PO.extent, px, py), p = toXY(g.lat, g.lng);
           if (owns(g)) pois.set(f.id, {key:'p' + f.id, p, kind:k[0], base:k[1], name:(f.props.name || '').trim()});
         }
       }
       ok = true;
+      let nseg = 0; for (const l of segs.values()) nseg += l.length;
+      Object.assign(stats, {pois:pois.size, segs:nseg, waters:waters.length, noGo:noGo.length, walks:walks.length});
     }catch(err){ stats.error = String(err && err.message || err).slice(0, 80); }
   }
   stats.fetchMs = Date.now() - t0; stats.ok = ok || mode === 'random';
@@ -353,9 +379,16 @@ async function buildSector(sid, opts = {}){
   // Over water is fine for a viewpoint on a pier or breakwater, but only when a public path or pier is within reach.
   const nearestOn = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, L = dx*dx + dy*dy;
     let k = L ? ((p.x - a.x)*dx + (p.y - a.y)*dy)/L : 0; k = k < 0 ? 0 : k > 1 ? 1 : k; return {x:a.x + k*dx, y:a.y + k*dy}; };
-  const reachable = p => walks.some(wk => wk.pts.some((q, i) => { if (!i) return false;
+  // A path or pier counts only if no part of it is on restricted land (a breakwater path that starts inside a base doesn't),
+  // and a pier only if it reaches land and stays out of industrial ground.
+  const isPier = wk => wk.kind[0] === 'Pier';
+  const usable = wk => wk.ok != null ? wk.ok : (wk.ok = !wk.pts.some(q => inZones(q, noGo))
+    && (!isPier(wk) || (wk.pts.some(q => !inZones(q, waters)) && !wk.pts.some(q => inZones(q, industrial)))));
+  const reachable = p => walks.some(wk => usable(wk) && wk.pts.some((q, i) => {
+    if (!i) return false;
     const c = nearestOn(p, wk.pts[i - 1], q);
-    return Math.hypot(c.x - p.x, c.y - p.y) <= REACH && !inZones(c, noGo) && !(wk.kind[0] === 'Pier' && inZones(c, industrial)); }));
+    return Math.hypot(c.x - p.x, c.y - p.y) <= REACH;
+  }));
   const nearestRoad = p => {
     let best = 60; const gx = Math.floor(p.x/CELL), gy = Math.floor(p.y/CELL);
     for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iy = gy - 1; iy <= gy + 1; iy++){
@@ -403,8 +436,9 @@ async function buildSector(sid, opts = {}){
         let d = carry;
         for (; d < L; d += 30){
           const p = {x:q1(a.x + (b.x - a.x)*d/L), y:q1(a.y + (b.y - a.y)*d/L)};
-          const pier = wk.kind[0] === 'Pier';
-          if (!owns(toLL(p)) || !clear(p, pier ? PIER_CLEAR : WALK_CLEAR) || (pier && inZones(p, industrial))) continue;
+          const pier = isPier(wk);
+          if (pier && !usable(wk)) break;                       // detached, industrial or restricted pier: no spots on it
+          if (!owns(toLL(p)) || !clear(p, pier ? PIER_CLEAR : WALK_CLEAR)) continue;
           const key = 'w' + Math.round(p.x) + '_' + Math.round(p.y);
           if (keys.has(key)) continue;
           keys.add(key);
@@ -438,7 +472,9 @@ async function buildSector(sid, opts = {}){
         const p = {x:q1(r()*W), y:q1(r()*H)};
         if (!owns(toLL(p)) || !spaced(p) || !clear(p, WALK_CLEAR)) continue;
         const name = nextName();
-        push({key:seed + i, p}, Object.assign({src:'random', name, kind:'Scratch spot', prov:`First pulled at ${name}`}, extra || {}));
+        // The id includes the position: a fallback spot (no map data) and a checked one land in different places and must
+        // never share an id, or one would inherit the other's cooldown.
+        push({key:seed + i + '@' + Math.round(p.x) + '_' + Math.round(p.y), p}, Object.assign({src:'random', name, kind:'Scratch spot', prov:`First pulled at ${name}`}, extra || {}));
         made++; break;
       }
     }
@@ -459,8 +495,12 @@ async function buildSector(sid, opts = {}){
 
 // The caller restores a snapshot saved after an earlier switch, and saves the next one.
 function init(o = {}){
-  if (typeof o.snapshot === 'string' && /^[\w.-]+$/.test(o.snapshot)){ snapUsed = o.snapshot; snapNote = o.snapshot === SNAPSHOT ? 'pinned' : 'latest'; }
+  const v = o.saved;
+  if (v && v.pin === SNAPSHOT && typeof v.snap === 'string' && /^[\w.-]+$/.test(v.snap) && v.snap !== SNAPSHOT){
+    retired = true; snapUsed = v.snap; snapNote = 'latest';
+  }
   if (typeof o.onSwitch === 'function') onSwitch = o.onSwitch;
+  settleSnapshot();                                          // recheck the newest at launch, even if nothing needs building
 }
 window.PecanWorld = {SNAPSHOT, SECTOR, init, hash32, rng, sectorOf, sectorsNear, parseSector, buildSector, decodeTile, get snapshot(){ return snapUsed; }};
 })();

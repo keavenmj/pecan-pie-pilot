@@ -568,8 +568,11 @@ $('permSkip').addEventListener('click', () => showView('vCollection'));
    spots for a sector from the same pinned map tiles and seeded randomness. This file only decides which sectors to
    load, merges them into the player's list, and keeps per-player state (cooldowns, bingo balls) on the spot by id. */
 const World = window.PecanWorld;
-// Start from the snapshot saved after any earlier switch (a retired pin), so a relaunch doesn't rebuild everything.
-World.init({snapshot:store.get('tileSnap', null), onSwitch:s => { store.set('tileSnap', s); event('tile_snapshot', {snapshot:s}); }});
+// If the pinned tile snapshot was retired, the newest one (saved with the pin it replaced) lets a relaunch start at once.
+World.init({saved:store.get('tileSnap', null), onSwitch:v => {
+  const old = store.get('tileSnap', null);
+  if (!old || old.snap !== v.snap){ store.set('tileSnap', v); event('tile_snapshot', {snapshot:v.snap}); setTimeout(ensureSectors, 0); }   // rebuild on the new one
+}});
 const article = w => /^[aeiou]/i.test(w) ? 'an' : 'a';
 let sectorsDone = store.get('sectorsDone', {});            // sector id -> snapshot it was built from (only full builds)
 let building = false, lastBuildFail = 0, noteTimer = null;
@@ -589,7 +592,12 @@ async function ensureSectors(){
   building = true;
   try{ await buildNear(want); }
   catch(err){ mapNote(null); event('sector_error', {error:String(err && err.message || err).slice(0, 80)}); lastBuildFail = Date.now(); }
-  finally { building = false; }
+  finally {
+    building = false;
+    // Save whatever was merged, even if a later sector failed, so storage matches the map.
+    store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('sectorsDone', sectorsDone);
+    refreshNodes();
+  }
 }
 async function buildNear(want){
   const quiet = cardsNear();                               // background load with spots already around: no notes
@@ -609,7 +617,6 @@ async function buildNear(want){
   }
   if (failed) lastBuildFail = Date.now();
   trimNodes();
-  store.set('nodes', nodes); store.set('nodesV', NODES_V); store.set('sectorsDone', sectorsDone);
   if (!quiet) mapNote(failed ? 'Couldn’t reach map data, so nodes are placed at random for now.'
     : randomOnly && P.nodeSource !== 'random' ? 'Few walkable places are mapped here, so some nodes are placed at random.' : null, failed || randomOnly ? 6000 : 0);
   refreshNodes();
