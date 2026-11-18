@@ -57,7 +57,7 @@ const RANK_WEIGHTS = [45, 28, 17, 8, 2];                        // Common to Myt
 const NODE_NAMES = ['Tidewater Post', 'Gull Rock', 'Lantern Steps', 'Rope Yard', 'Salt Gate', 'Breakwater Bench', 'Kelp Corner',
   'Pilot House', 'Harbor Clock', 'Net Loft', 'Bell Tower', 'Ferry Slip', 'Driftwood Arch', 'Signal Hill', 'Shell Walk', 'Mooring Post',
   'Old Customs', 'Fog Bell', 'Cannery Row', 'Pier Gate'];
-const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:2, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm', fog:'plain'}, store.get('pilot', {}));
+const P = Object.assign({vis:400, ringMid:200, ringNear:100, reach:75, acc:100, cool:2, dieCool:6, mock:'off', walk:'1.4', tester:'', hook:'', debug:false, nodeSource:'osm', fog:'plain', fogEdge:true}, store.get('pilot', {}));
 if (!P.fogV){ P.fog = 'plain'; P.fogV = 2; store.set('pilot', P); }   // 3.9: the blurred fog flickered on iPhone; everyone starts on the canvas veil
 const saveP = () => store.set('pilot', P);
 // Card spots now recharge in 2 hours (was 4). Settings saved before the change still say 4, so move them once.
@@ -74,7 +74,7 @@ if (!testerId){ testerId = 'T-' + Math.floor(E.rng()*1e6).toString(36).toUpperCa
 const session = Date.now().toString(36) + '-' + Math.floor(E.rng()*1e6).toString(36);
 
 /* ================= Event log ================= */
-const APP_V = '3.9';
+const APP_V = '3.10';
 const PLATFORM = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iOS'
   : /Android/.test(navigator.userAgent) ? 'Android' : 'other';
 const standalone = () => !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -459,7 +459,7 @@ const meMarker = L.marker([0, 0], {icon:L.divIcon({className:'', html:'<div clas
 const accCircle = L.circle([0, 0], {radius:1, color:'#2F7DE1', weight:1, fillOpacity:.1, interactive:false});
 const reachCircle = L.circle([0, 0], {radius:P.reach, color:'#C9971C', weight:1.5, dashArray:'4 6', fill:false, interactive:false});
 // Fog of war (js/fog.js): history stays on this phone as ~10 m cells and is never logged; only redraw timing is.
-const fog = window.PecanFog.create(map, {style:P.fog, load:() => store.get('fog', []), save:l => store.set('fog', l), onPerf:d => event('fog_perf', d)});
+const fog = window.PecanFog.create(map, {style:P.fog, edge:P.fogEdge, load:() => store.get('fog', []), save:l => store.set('fog', l), onPerf:d => event('fog_perf', d)});
 map.on('dragstart', () => { follow = false; });
 $('recenter').addEventListener('click', () => { follow = true; if (me) map.setView([me.lat, me.lng], Math.max(map.getZoom(), 16)); });
 
@@ -668,7 +668,10 @@ function refreshNodes(){
     if (!show){ if (m){ m.remove(); markers.delete(n.id); } continue; }
     const label = info.st === 'cooling' ? fmtLeft(info.left) : info.st === 'inrange' ? 'In reach' : fmtDist(info.d);
     const look = markerLook(n, info);
-    const key = info.st + '|' + label + '|' + look.key;
+    // Spots under the fog are drawn dimmed and blurred: still there and still tappable, just not clear. Anything in reach
+    // sits inside the lantern, so it is never fogged.
+    const fogged = info.st !== 'inrange' && !fog.isClear(n.lat, n.lng);
+    const key = info.st + '|' + label + '|' + look.key + (fogged ? '|fog' : '');
     if (!m){
       m = L.marker([n.lat, n.lng], {keyboard:true, title:n.name});
       const id = n.id;                                     // resolve the live spot on tap: rebuilds replace spot objects
@@ -678,7 +681,7 @@ function refreshNodes(){
     if (m._key !== key){
       m._key = key;
       m.setIcon(L.divIcon({className:'', iconSize:[34, 44], iconAnchor:[17, 40],
-        html:`<div class="node ${info.st} ${look.cls}">${look.html}<div class="t">${label}</div></div>`}));
+        html:`<div class="node ${info.st} ${look.cls}${fogged ? ' fogged' : ''}">${look.html}<div class="t">${label}</div></div>`}));
       m.setZIndexOffset(look.z);
     }
     if (info.st === 'inrange' && !wasInRange.has(n.id)){ wasInRange.add(n.id); event('node_in_range', {node:n.id, type:n.type || 'card', d:Math.round(info.d), acc:Math.round(meAcc)}); }
@@ -1256,6 +1259,8 @@ $('dMock').addEventListener('change', () => {
 $('dWalk').value = String(P.walk);
 $('dWalk').addEventListener('change', () => { P.walk = $('dWalk').value; saveP(); });
 $('dReseed').addEventListener('click', () => { if (me){ reseedNodes(); $('dNote').textContent = 'Rebuilding nodes around you.'; } else $('dNote').textContent = 'No location yet.'; });
+$('dFogEdge').checked = !!P.fogEdge;
+$('dFogEdge').addEventListener('change', () => { P.fogEdge = $('dFogEdge').checked; saveP(); fog.setEdge(P.fogEdge); event('fog_edge', {on:P.fogEdge}); });
 $('dFog').value = P.fog;
 $('dFog').addEventListener('change', () => { P.fog = $('dFog').value; saveP(); fog.setStyle(P.fog); event('fog_style', {style:P.fog}); });
 $('dSource').value = P.nodeSource;
@@ -1376,5 +1381,5 @@ updateOutboxNote(); scheduleFlush(1500);
 initLocation();
 setInterval(() => { refreshNodes(); updateChips(); }, 1000);
 setTimeout(maybeShowInstallTip, 4000);
-window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, ensureSectors, reseedNodes, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get sectorsDone(){ return sectorsDone; }, world:World, fog};
+window.__pilot = {get baseMode(){ return baseMode; }, get gl(){ return baseLayer && baseLayer.getMaplibreMap ? baseLayer.getMaplibreMap() : null; }, get outbox(){ return outbox; }, flush, get nodes(){ return nodes; }, get collection(){ return collection; }, get events(){ return events; }, P, setPosition, ensureSectors, reseedNodes, showView, get board(){ return board; }, get dice(){ return dice; }, get basic(){ return basic; }, get badges(){ return badges; }, trackMove, refreshNodes, markerLook, nodeInfo, openSheet, daub, get sectorsDone(){ return sectorsDone; }, world:World, fog, map};
 })();

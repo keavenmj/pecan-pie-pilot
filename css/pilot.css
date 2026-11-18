@@ -430,3 +430,7 @@ button.bcell { cursor: pointer; font: inherit; font-family: var(--font-display);
 .vchips.big { gap: 6px; } .vchips.big span { font-size: 12px; padding: 8px 0 7px; border-radius: 8px; }
 .vchips.big span.own { cursor: pointer; } .vchips.big span.current { outline: 2px solid var(--accent); outline-offset: 2px; }
 .solo.empty .name, .solo.empty .val { color: rgba(26,31,38,.35); }
+
+/* Spots under the fog: dimmed and blurred, still tappable. */
+.node.fogged > :first-child { opacity: .5; filter: blur(1.4px) saturate(.35); }
+.node.fogged .t { opacity: .55; }

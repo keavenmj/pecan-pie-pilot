@@ -21,7 +21,9 @@
 'use strict';
 // PAD: the fog reaches a full screen past each edge, so a one-level zoom out (half size) still covers the screen.
 const STEP = 8, TRAIL_R = 40, LANTERN_R = 100, MAX_CELLS = 20000, RES = 0.5, PAD = 1;
-const VEIL = 'rgba(9,6,22,.84)';
+// The veil is a light violet mist rather than more darkness, so it reads as haze over the dark map. An optional mint glow
+// marks the edge between explored and unexplored ground.
+const VEIL = 'rgba(132,120,178,.42)', RIM = '61,255,160';
 const keyOf = (lat, lng) => Math.round(lat*1e4) + ',' + Math.round(lng*1e4);
 const cellLL = k => { const [a, b] = k.split(','); return [a/1e4, b/1e4]; };
 // Cells are kept parsed (key -> [lat, lng]) so a redraw, which runs on every GPS fix, never re-parses strings.
@@ -31,7 +33,7 @@ const toMap = keys => new Map((Array.isArray(keys) ? keys : []).filter(k => type
 
 function create(map, opts){
   const load = opts.load || (() => []), save = opts.save || (() => {}), onPerf = opts.onPerf || (() => {});
-  let style = opts.style || 'plain', me = null, cells = toMap(load()), saveTimer = null;
+  let style = opts.style || 'plain', edge = opts.edge !== false, me = null, cells = toMap(load()), saveTimer = null;
   const pane = map.createPane('fog'); pane.style.zIndex = 390; pane.style.pointerEvents = 'none';
   const el = (tag, cls) => { const e = document.createElement(tag); e.className = cls + ' leaflet-zoom-animated'; e.hidden = true; pane.appendChild(e); return e; };
   const sheet = el('canvas', 'fog-sheet');                         // plain style: the visible canvas itself
@@ -70,8 +72,19 @@ function create(map, opts){
       rg.addColorStop(0, 'rgba(0,0,0,1)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = rg; g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
     };
-    g.globalCompositeOperation = 'destination-out';
     const b = map.getBounds().pad(PAD + .2), s = b.getSouth(), n = b.getNorth(), we = b.getWest(), e = b.getEast();
+    if (edge && fill !== '#000'){
+      // A faint glow just outside each cleared edge; the holes cut away the inside, so only the frontier keeps it.
+      g.globalCompositeOperation = 'source-over';
+      const ring = (lat, lng, meters) => { const c = map.latLngToContainerPoint([lat, lng]), x = c.x + px, y = c.y + py, r = meters/mpp;
+        if (x < -2*r || y < -2*r || x > w + 2*r || y > h + 2*r) return;
+        const rg = g.createRadialGradient(x, y, r*.8, x, y, r*1.35);
+        rg.addColorStop(0, `rgba(${RIM},0)`); rg.addColorStop(.35, `rgba(${RIM},.28)`); rg.addColorStop(1, `rgba(${RIM},0)`);
+        g.fillStyle = rg; g.beginPath(); g.arc(x, y, r*1.35, 0, Math.PI*2); g.fill(); };
+      for (const [lat, lng] of cells.values()) if (lat >= s && lat <= n && lng >= we && lng <= e) ring(lat, lng, TRAIL_R);
+      if (me) ring(me.lat, me.lng, LANTERN_R);
+    }
+    g.globalCompositeOperation = 'destination-out';
     for (const [lat, lng] of cells.values()) if (lat >= s && lat <= n && lng >= we && lng <= e) hole(lat, lng, TRAIL_R);
     if (me) hole(me.lat, me.lng, LANTERN_R);
     return {nw:map.containerPointToLatLng([-px, -py]), se:map.containerPointToLatLng([size.x + px, size.y + py])};
@@ -83,7 +96,7 @@ function create(map, opts){
     if (style === 'plain'){
       veils.forEach(v => { v.hidden = true; });
       const box = paint(sheet, VEIL);
-      sheet._nw = box.nw; sheet._se = box.se; place(sheet); sheet.hidden = false;
+      sheet._nw = box.nw; sheet._se = box.se; sheet._z = map.getZoom(); place(sheet); sheet.hidden = false;
     } else {
       // The canvas veil stays up until the first blurred layer is actually showing, so switching never leaves a gap.
       const box = paint(work, '#000'), job = ++maskJob, back = 1 - front;
@@ -109,17 +122,23 @@ function create(map, opts){
     }
     if (perf.length < 5 && me){ perf.push(performance.now() - t0); if (perf.length === 5){ const sorted = perf.slice().sort((a, z) => a - z); onPerf({style, medianMs:Math.round(sorted[2]), maxMs:Math.round(sorted[4]), cells:cells.size}); } }
   }
-  let raf = 0, zooming = false;
+  let raf = 0, zooming = false, animating = false;
   const redraw = () => { if (!zooming && !raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
   const shown = () => [sheet].concat(veils).filter(e => !e.hidden);
   map.on('moveend resize', redraw);
-  map.on('zoom viewreset', () => shown().forEach(place));          // pinch zoom: stretch with the map each frame
+  // Pinch zoom: stretch with the map each frame. Once the zoom has moved half a level from the last paint, repaint instead:
+  // a layer stretched to several times the screen grows past what iPhones will draw, and the fog would drop out.
+  map.on('zoom viewreset', () => {
+    shown().forEach(place);
+    if (!animating && style === 'plain' && sheet._z != null && Math.abs(map.getZoom() - sheet._z) >= .5 && !raf)
+      raf = requestAnimationFrame(() => { raf = 0; draw(); });
+  });
   map.on('zoomanim', e => {                                       // animated zoom: ride the same transform as the map
-    zooming = true;
+    zooming = true; animating = true;
     for (const v of shown()) if (v._nw) L.DomUtil.setTransform(v, map._latLngToNewLayerPoint(v._nw, e.zoom, e.center), map.getZoomScale(e.zoom));
   });
   map.on('zoomstart', () => { zooming = true; });
-  map.on('zoomend', () => { zooming = false; shown().forEach(place); redraw(); });
+  map.on('zoomend', () => { zooming = false; animating = false; shown().forEach(place); redraw(); });
   draw();
 
   return {
@@ -132,9 +151,21 @@ function create(map, opts){
     },
     setMe(p){ me = p ? {lat:p.lat, lng:p.lng} : null; redraw(); },
     setStyle(s){ style = s; redraw(); },
+    setEdge(on){ edge = !!on; redraw(); },
     clear(){ cells = new Map(); save([]); redraw(); },
     get size(){ return cells.size; },
-    get style(){ return style; }
+    get style(){ return style; },
+    // Is this point in clear ground (walked, or inside the lantern)? Spots under the fog are drawn dimmed.
+    isClear(lat, lng){
+      if (style === 'off') return true;
+      if (me && map.distance([lat, lng], [me.lat, me.lng]) <= LANTERN_R*.85) return true;
+      const r = TRAIL_R*.7, la = Math.round(lat*1e4), lo = Math.round(lng*1e4);
+      for (let i = -4; i <= 4; i++) for (let j = -5; j <= 5; j++){
+        const c = cells.get((la + i) + ',' + (lo + j));
+        if (c && map.distance([lat, lng], c) <= r) return true;
+      }
+      return false;
+    }
   };
 }
 window.PecanFog = {create};
